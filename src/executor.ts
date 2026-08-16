@@ -272,11 +272,7 @@ export function createAgentRuntimeExecutor(options?: {
         ];
         return { agent, currentModel, models };
       } finally {
-        await runtime.close({
-          handle,
-          reason: "model catalog complete",
-          discardPersistentState: true,
-        });
+        await closeDisposableAcpSession(runtime, handle);
       }
     },
 
@@ -353,6 +349,28 @@ export function createAgentRuntimeExecutor(options?: {
       resolve(normalizePermissionDecision(decision));
     },
   };
+}
+
+async function closeDisposableAcpSession(
+  runtime: AcpxRuntimeLike,
+  handle: AcpRuntimeHandle,
+): Promise<void> {
+  const input = { handle, reason: "model catalog complete" };
+  try {
+    await runtime.close({ ...input, discardPersistentState: true });
+  } catch (error) {
+    if (!isUnsupportedAcpControl(error)) throw error;
+    await runtime.close(input);
+  }
+}
+
+function isUnsupportedAcpControl(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "ACP_BACKEND_UNSUPPORTED_CONTROL"
+  );
 }
 
 async function supportsThinkingConfiguration(

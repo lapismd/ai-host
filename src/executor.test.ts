@@ -67,3 +67,44 @@ describe("agent runtime executor ACP thinking", () => {
     await executor.closeAcpSession(result.sessionId);
   });
 });
+
+describe("agent runtime executor ACP model catalogs", () => {
+  it("keeps Cursor models when backend session close is unsupported", async () => {
+    const fake = createRuntime(["mode", "model"]);
+    fake.runtime.getStatus = async () => ({
+      models: {
+        currentModelId: "composer-2.5",
+        availableModelIds: ["composer-2.5", "composer-2.5-fast"],
+      },
+    });
+    const unsupported = Object.assign(
+      new Error("Agent does not support session/close"),
+      { code: "ACP_BACKEND_UNSUPPORTED_CONTROL" },
+    );
+    const close = vi
+      .fn()
+      .mockRejectedValueOnce(unsupported)
+      .mockResolvedValueOnce(undefined);
+    fake.runtime.close = close;
+    const executor = createAgentRuntimeExecutor({
+      createAcpxRuntime: async () => fake.runtime,
+    });
+
+    await expect(
+      executor.listAcpModels(sink, { agent: "cursor" }),
+    ).resolves.toEqual({
+      agent: "cursor",
+      currentModel: "composer-2.5",
+      models: ["composer-2.5", "composer-2.5-fast"],
+    });
+    expect(close).toHaveBeenNthCalledWith(1, {
+      handle: expect.any(Object),
+      reason: "model catalog complete",
+      discardPersistentState: true,
+    });
+    expect(close).toHaveBeenNthCalledWith(2, {
+      handle: expect.any(Object),
+      reason: "model catalog complete",
+    });
+  });
+});
