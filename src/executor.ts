@@ -4,6 +4,7 @@ import { resolveAcpAgent } from "./acp-agent";
 import type {
   NativeAgentProcessMessage,
   NativeAgentRuntimeEvent,
+  UnsequencedAgentRuntimeEvent,
 } from "./protocol";
 import {
   toAcpxSessionOptions,
@@ -13,6 +14,11 @@ import {
 
 export type AgentHostSink = {
   sendRuntimeEvent(event: NativeAgentRuntimeEvent): void;
+  sendProcessMessage(event: NativeAgentProcessMessage): void;
+};
+
+export type AgentRuntimeInputSink = {
+  sendRuntimeEvent(event: UnsequencedAgentRuntimeEvent): void;
   sendProcessMessage(event: NativeAgentProcessMessage): void;
 };
 
@@ -87,7 +93,9 @@ export type AcpxRuntimeLike = {
       availableModelIds?: string[];
     };
   }>;
-  getCapabilities?(input: { handle: AcpRuntimeHandle }):
+  getCapabilities?(input: {
+    handle: AcpRuntimeHandle;
+  }):
     | Promise<{ configOptionKeys?: string[] }>
     | { configOptionKeys?: string[] };
   setConfigOption?(input: {
@@ -104,7 +112,7 @@ export type AcpxRuntimeLike = {
 };
 
 export type CreateAcpxRuntime = (
-  sink: AgentHostSink,
+  sink: AgentRuntimeInputSink,
   sessionId: string,
   payload: AcpStartPayload,
   pendingApprovals: Map<string, (decision: AcpPermissionDecision) => void>,
@@ -129,7 +137,7 @@ export type AgentRuntimeExecutor = {
     sink: AgentHostSink,
     sessionId: string,
     text: string,
-  ): Promise<void>;
+  ): Promise<{ runId: string }>;
   cancelAcpSession(sessionId: string): Promise<void>;
   closeAcpSession(sessionId: string): Promise<void>;
   respondAcpSession(
@@ -143,10 +151,7 @@ export function createAgentRuntimeExecutor(options?: {
   createAcpxRuntime?: CreateAcpxRuntime;
 }): AgentRuntimeExecutor {
   const processes = new Map<string, ChildProcessWithoutNullStreams>();
-  const acpSessions = new Map<
-    string,
-    { runtime: AcpxRuntimeLike; handle: AcpRuntimeHandle; sink: AgentHostSink }
-  >();
+  const acpSessions = new Map<string, AcpSessionState>();
   const pendingApprovals = new Map<
     string,
     (decision: AcpPermissionDecision) => void
@@ -198,9 +203,30 @@ export function createAgentRuntimeExecutor(options?: {
 
     async startAcpSession(sink, payload) {
       const sessionId = payload.resumeSessionId ?? randomUUID();
+      const existing = acpSessions.get(sessionId);
+      if (existing) {
+        existing.sink = sink;
+        return { sessionId };
+      }
       const agent = resolveAcpAgent(payload);
-      const runtime = await createAcpx(
+      const session: AcpSessionState = {
+        sessionId,
         sink,
+        currentRunId: "session",
+        nextSequence: 0,
+        runtime: undefined as unknown as AcpxRuntimeLike,
+        handle: undefined as unknown as AcpRuntimeHandle,
+      };
+      const runtimeSink: AgentRuntimeInputSink = {
+        sendRuntimeEvent(event) {
+          emitRuntimeEvent(session, session.currentRunId, event);
+        },
+        sendProcessMessage(event) {
+          session.sink.sendProcessMessage(event);
+        },
+      };
+      const runtime = await createAcpx(
+        runtimeSink,
         sessionId,
         payload,
         pendingApprovals,
@@ -238,15 +264,34 @@ export function createAgentRuntimeExecutor(options?: {
           throw error;
         }
       }
-      acpSessions.set(sessionId, { runtime, handle, sink });
+      session.runtime = runtime;
+      session.handle = handle;
+      acpSessions.set(sessionId, session);
       return { sessionId };
     },
 
     async listAcpModels(sink, payload) {
       const sessionId = randomUUID();
       const agent = resolveAcpAgent(payload);
+      let sequence = 0;
+      const catalogSink: AgentRuntimeInputSink = {
+        sendRuntimeEvent(event) {
+          sequence += 1;
+          sink.sendRuntimeEvent({
+            sessionId,
+            runId: "model-catalog",
+            sequence,
+            event: {
+              type: event.type,
+              event: event.event,
+              request: event.request,
+            },
+          });
+        },
+        sendProcessMessage: (event) => sink.sendProcessMessage(event),
+      };
       const runtime = await createAcpx(
-        sink,
+        catalogSink,
         sessionId,
         { ...payload, agent },
         pendingApprovals,
@@ -280,16 +325,18 @@ export function createAgentRuntimeExecutor(options?: {
       const session = acpSessions.get(sessionId);
       if (!session) throw new Error(`Unknown ACP session: ${sessionId}`);
       session.sink = sink;
+      const runId = randomUUID();
+      session.currentRunId = runId;
       const turn = session.runtime.startTurn({
         handle: session.handle,
         text,
         mode: "prompt",
-        requestId: randomUUID(),
+        requestId: runId,
       });
       void (async () => {
         try {
           for await (const event of turn.events) {
-            session.sink.sendRuntimeEvent({
+            emitRuntimeEvent(session, runId, {
               sessionId,
               type: "event",
               event,
@@ -297,7 +344,7 @@ export function createAgentRuntimeExecutor(options?: {
           }
           const result = await turn.result;
           if (result.status === "failed") {
-            session.sink.sendRuntimeEvent({
+            emitRuntimeEvent(session, runId, {
               sessionId,
               type: "event",
               event: {
@@ -307,7 +354,7 @@ export function createAgentRuntimeExecutor(options?: {
             });
             return;
           }
-          session.sink.sendRuntimeEvent({
+          emitRuntimeEvent(session, runId, {
             sessionId,
             type: "event",
             event: {
@@ -316,7 +363,7 @@ export function createAgentRuntimeExecutor(options?: {
             },
           });
         } catch (error) {
-          session.sink.sendRuntimeEvent({
+          emitRuntimeEvent(session, runId, {
             sessionId,
             type: "event",
             event: {
@@ -326,6 +373,7 @@ export function createAgentRuntimeExecutor(options?: {
           });
         }
       })();
+      return { runId };
     },
 
     async cancelAcpSession(sessionId) {
@@ -349,6 +397,33 @@ export function createAgentRuntimeExecutor(options?: {
       resolve(normalizePermissionDecision(decision));
     },
   };
+}
+
+type AcpSessionState = {
+  sessionId: string;
+  runtime: AcpxRuntimeLike;
+  handle: AcpRuntimeHandle;
+  sink: AgentHostSink;
+  currentRunId: string;
+  nextSequence: number;
+};
+
+function emitRuntimeEvent(
+  session: AcpSessionState,
+  runId: string,
+  input: UnsequencedAgentRuntimeEvent,
+): void {
+  session.nextSequence += 1;
+  session.sink.sendRuntimeEvent({
+    sessionId: session.sessionId,
+    runId,
+    sequence: session.nextSequence,
+    event: {
+      type: input.type,
+      event: input.event,
+      request: input.request,
+    },
+  });
 }
 
 async function closeDisposableAcpSession(
@@ -384,7 +459,7 @@ async function supportsThinkingConfiguration(
 }
 
 export async function defaultCreateAcpxRuntime(
-  sink: AgentHostSink,
+  sink: AgentRuntimeInputSink,
   sessionId: string,
   payload: AcpStartPayload,
   pendingApprovals: Map<string, (decision: AcpPermissionDecision) => void>,

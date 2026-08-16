@@ -6,6 +6,7 @@ import {
   type NativeAgentProcessMessage,
   type NativeAgentRuntimeEvent,
   type ProcessMessageFrame,
+  type RuntimeReplaySubscription,
   type RuntimeEventFrame,
 } from "./protocol";
 
@@ -25,6 +26,7 @@ export type AgentRuntimeBridge = {
     };
   };
   invoke<T>(command: string, payload?: Record<string, unknown>): Promise<T>;
+  dispose(): void;
   toFileUrl(path: string): string;
   onAgentRuntimeEvent?(
     listener: (event: NativeAgentRuntimeEvent) => void,
@@ -81,7 +83,10 @@ export function createAgentRuntimeBridge(
   const processListeners = new Set<
     (event: NativeAgentProcessMessage) => void
   >();
-  const activeSessions = new Set<string>();
+  const activeSessions = new Map<string, number>();
+  const replayGapSequences = new Map<string, number>();
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let disposed = false;
   let nextId = 0;
 
   function nextMessageId(): string {
@@ -100,6 +105,14 @@ export function createAgentRuntimeBridge(
     const record = parsed as Record<string, unknown>;
     if (record.type === "agent-runtime-event") {
       const frame = parsed as RuntimeEventFrame;
+      const previous = activeSessions.get(frame.event.sessionId);
+      if (previous != null && frame.event.sequence <= previous) return;
+      if (previous != null && frame.event.sequence > previous + 1) {
+        activeSessions.set(frame.event.sessionId, frame.event.sequence);
+        notifyReplayGap(frame.event.sessionId, previous, frame.event.sequence);
+        return;
+      }
+      activeSessions.set(frame.event.sessionId, frame.event.sequence);
       for (const listener of runtimeListeners) listener(frame.event);
       return;
     }
@@ -121,7 +134,42 @@ export function createAgentRuntimeBridge(
     }
   }
 
+  function notifyReplayGap(
+    sessionId: string,
+    afterSequence: number,
+    receivedSequence: number,
+  ): void {
+    if ((replayGapSequences.get(sessionId) ?? -1) >= receivedSequence) return;
+    replayGapSequences.set(sessionId, receivedSequence);
+    const message =
+      `Agent-runtime replay gap after sequence ${afterSequence}; ` +
+      "the interrupted turn was not resent because it may have caused side effects.";
+    const event: NativeAgentRuntimeEvent = {
+      sessionId,
+      runId: "replay-gap",
+      sequence: receivedSequence,
+      event: {
+        type: "closed",
+        event: {
+          type: "error",
+          code: "AGENT_RUNTIME_REPLAY_GAP",
+          message,
+        },
+      },
+    };
+    for (const listener of runtimeListeners) listener(event);
+  }
+
+  function scheduleReconnect(): void {
+    if (disposed || reconnectTimer || activeSessions.size === 0) return;
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      void ensureConnected().catch(() => scheduleReconnect());
+    }, 250);
+  }
+
   async function ensureConnected(): Promise<void> {
+    if (disposed) throw new Error("Agent-runtime bridge is disposed");
     if (socket?.readyState === WebSocket.OPEN && connectPromise) {
       await connectPromise;
       return;
@@ -130,13 +178,17 @@ export function createAgentRuntimeBridge(
       const next = new WebSocket(options.url);
       socket = next;
       const helloId = nextMessageId();
-      let settled = false;
+      let finished = false;
+      let ready = false;
       const fail = (error: Error) => {
-        if (settled) return;
-        settled = true;
+        if (finished) return;
+        finished = true;
         clearTimeout(timer);
         next.close();
+        if (socket === next) socket = null;
+        connectPromise = null;
         reject(error);
+        scheduleReconnect();
       };
       const timer = setTimeout(() => {
         fail(new Error(`Agent-runtime connection timed out: ${options.url}`));
@@ -160,9 +212,55 @@ export function createAgentRuntimeBridge(
           next.addEventListener("message", (later) => {
             handleFrame(String(later.data));
           });
-          settled = true;
-          clearTimeout(timer);
-          resolve();
+          const cursors = [...activeSessions].map(
+            ([sessionId, afterSequence]) => ({ sessionId, afterSequence }),
+          );
+          const finish = () => {
+            if (finished) return;
+            finished = true;
+            ready = true;
+            clearTimeout(timer);
+            resolve();
+          };
+          if (cursors.length === 0) {
+            finish();
+            return;
+          }
+          const id = nextMessageId();
+          const subscribed = new Promise<RuntimeReplaySubscription[]>(
+            (resolveSubscribe, rejectSubscribe) => {
+              pending.set(id, {
+                resolve: (value) =>
+                  resolveSubscribe(value as RuntimeReplaySubscription[]),
+                reject: rejectSubscribe,
+              });
+              next.send(
+                JSON.stringify({
+                  id,
+                  command: "desktop_agent_runtime_subscribe",
+                  payload: { sessions: cursors },
+                }),
+              );
+            },
+          );
+          void subscribed.then((results) => {
+            for (const result of results) {
+              const previous = activeSessions.get(result.sessionId) ?? 0;
+              if (result.gap) {
+                const interruptedSequence = Math.max(
+                  result.latestSequence,
+                  previous + 1,
+                );
+                activeSessions.set(result.sessionId, interruptedSequence);
+                notifyReplayGap(
+                  result.sessionId,
+                  previous,
+                  interruptedSequence,
+                );
+              }
+            }
+            finish();
+          }, fail);
           return;
         }
         if (isHelloRequest(parsed)) {
@@ -181,31 +279,26 @@ export function createAgentRuntimeBridge(
         fail(new Error("Agent-runtime socket error"));
       });
       next.addEventListener("close", (event) => {
-        if (!settled && event.code >= 4000) {
+        if (!ready) {
           fail(
-            new Error(event.reason || "Agent-runtime authentication failed"),
+            new Error(
+              event.reason ||
+                (event.code >= 4000
+                  ? "Agent-runtime authentication failed"
+                  : "Agent-runtime connection closed"),
+            ),
           );
           return;
         }
-        if (!settled) return;
         const message = event.reason || "Agent-runtime connection closed";
         const error = new Error(message);
         for (const [id, waiter] of pending) {
           pending.delete(id);
           waiter.reject(error);
         }
-        for (const sessionId of activeSessions) {
-          for (const listener of runtimeListeners) {
-            listener({
-              sessionId,
-              type: "closed",
-              event: { type: "error", message },
-            });
-          }
-        }
-        activeSessions.clear();
         if (socket === next) socket = null;
         connectPromise = null;
+        scheduleReconnect();
       });
     });
     await connectPromise;
@@ -229,10 +322,16 @@ export function createAgentRuntimeBridge(
         ? String((result as { sessionId?: unknown }).sessionId ?? "")
         : "";
     if (command === "desktop_agent_acp_start" && sessionId) {
-      activeSessions.add(sessionId);
+      if (!activeSessions.has(sessionId)) activeSessions.set(sessionId, 0);
     }
     if (command === "desktop_agent_acp_close") {
-      activeSessions.delete(String(payload?.sessionId ?? ""));
+      const closedSessionId = String(payload?.sessionId ?? "");
+      activeSessions.delete(closedSessionId);
+      replayGapSequences.delete(closedSessionId);
+      if (activeSessions.size === 0 && reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
     }
     return result as T;
   }
@@ -251,6 +350,21 @@ export function createAgentRuntimeBridge(
       },
     },
     invoke,
+    dispose() {
+      disposed = true;
+      activeSessions.clear();
+      replayGapSequences.clear();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+      const error = new Error("Agent-runtime bridge disposed");
+      for (const [id, waiter] of pending) {
+        pending.delete(id);
+        waiter.reject(error);
+      }
+      socket?.close(1000, "agent-runtime bridge disposed");
+      socket = null;
+      connectPromise = null;
+    },
     toFileUrl(path) {
       return path;
     },

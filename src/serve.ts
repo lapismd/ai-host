@@ -10,6 +10,7 @@ export type RunningAgentHost = {
   url: string;
   workspace: string;
   generatedToken: boolean;
+  disconnectClients(): void;
   close(): Promise<void>;
 };
 
@@ -49,6 +50,7 @@ export async function serveAgentHost(
     url,
     workspace,
     generatedToken,
+    disconnectClients: () => server.disconnectClients(),
     close: () => server.close(),
   };
 }

@@ -1,8 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  createAgentRuntimeExecutor,
-  type AcpxRuntimeLike,
-} from "./executor";
+import { createAgentRuntimeExecutor, type AcpxRuntimeLike } from "./executor";
 
 const sink = {
   sendRuntimeEvent: vi.fn(),
@@ -106,5 +103,41 @@ describe("agent runtime executor ACP model catalogs", () => {
       handle: expect.any(Object),
       reason: "model catalog complete",
     });
+  });
+});
+
+describe("agent runtime executor sequencing", () => {
+  it("reattaches an existing native session without resetting sequence identity", async () => {
+    sink.sendRuntimeEvent.mockClear();
+    sink.sendProcessMessage.mockClear();
+    const fake = createRuntime(["mode", "model"]);
+    const createAcpxRuntime = vi.fn(async () => fake.runtime);
+    const executor = createAgentRuntimeExecutor({ createAcpxRuntime });
+    const first = await executor.startAcpSession(sink, { agent: "codex" });
+    const firstRun = await executor.promptAcpSession(
+      sink,
+      first.sessionId,
+      "first",
+    );
+    await expect.poll(() => sink.sendRuntimeEvent.mock.calls.length).toBe(1);
+
+    await executor.startAcpSession(sink, {
+      agent: "codex",
+      resumeSessionId: first.sessionId,
+    });
+    const secondRun = await executor.promptAcpSession(
+      sink,
+      first.sessionId,
+      "second",
+    );
+    await expect.poll(() => sink.sendRuntimeEvent.mock.calls.length).toBe(2);
+
+    expect(createAcpxRuntime).toHaveBeenCalledTimes(1);
+    expect(firstRun.runId).not.toBe(secondRun.runId);
+    expect(
+      sink.sendRuntimeEvent.mock.calls.map(([event]) => event.sequence),
+    ).toEqual([1, 2]);
+    await executor.closeAcpSession(first.sessionId);
+    sink.sendRuntimeEvent.mockClear();
   });
 });

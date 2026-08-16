@@ -16,7 +16,9 @@ async function openSocket(url: string): Promise<WebSocket> {
   return socket;
 }
 
-function waitForClose(socket: WebSocket): Promise<{ code: number; reason: string }> {
+function waitForClose(
+  socket: WebSocket,
+): Promise<{ code: number; reason: string }> {
   return new Promise((resolve) => {
     socket.addEventListener(
       "close",
@@ -87,7 +89,7 @@ describe("agent-runtime websocket handshake", () => {
     await expect(reply).resolves.toMatchObject({
       id: "hello-1",
       type: "hello.ok",
-      protocol: 1,
+      protocol: 2,
     });
     socket.close();
   });

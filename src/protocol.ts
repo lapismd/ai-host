@@ -5,21 +5,34 @@ export type NativeAgentProcessMessage = {
   exitCode?: number;
 };
 
-export type NativeAgentRuntimeEvent = {
-  sessionId: string;
+export type NativeAgentRuntimeEventPayload = {
   type: "event" | "permission" | "closed";
   event?: Record<string, unknown>;
   request?: Record<string, unknown>;
 };
 
-export const AGENT_RUNTIME_PROTOCOL = 1;
+export type UnsequencedAgentRuntimeEvent = NativeAgentRuntimeEventPayload & {
+  sessionId: string;
+};
+
+export type NativeAgentRuntimeEvent = {
+  sessionId: string;
+  runId: string;
+  sequence: number;
+  event: NativeAgentRuntimeEventPayload;
+};
+
+export const AGENT_RUNTIME_PROTOCOL = 2;
 export const HELLO_TIMEOUT_MS = 5_000;
 export const AUTH_CLOSE_CODE = 4401;
+export const REPLAY_MAX_FRAMES = 10_000;
+export const REPLAY_MAX_BYTES = 8 * 1024 * 1024;
 
 export const AGENT_RUNTIME_COMMANDS = [
   "desktop_agent_acp_start",
   "desktop_agent_acp_models",
   "desktop_agent_acp_prompt",
+  "desktop_agent_runtime_subscribe",
   "desktop_agent_acp_cancel",
   "desktop_agent_acp_close",
   "desktop_agent_acp_respond",
@@ -57,6 +70,18 @@ export type CommandResult = {
 export type RuntimeEventFrame = {
   type: "agent-runtime-event";
   event: NativeAgentRuntimeEvent;
+};
+
+export type RuntimeReplayCursor = {
+  sessionId: string;
+  afterSequence: number;
+};
+
+export type RuntimeReplaySubscription = {
+  sessionId: string;
+  replayed: number;
+  latestSequence: number;
+  gap: boolean;
 };
 
 export type ProcessMessageFrame = {

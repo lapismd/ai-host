@@ -13,6 +13,7 @@ export {
   type AcpModelCatalog,
   type AcpStartPayload,
   type AgentHostSink,
+  type AgentRuntimeInputSink,
   type AgentRuntimeExecutor,
   type CreateAcpxRuntime,
   type SpawnPayload,
@@ -31,7 +32,15 @@ export {
   AGENT_RUNTIME_PROTOCOL,
   AUTH_CLOSE_CODE,
   HELLO_TIMEOUT_MS,
+  REPLAY_MAX_BYTES,
+  REPLAY_MAX_FRAMES,
+  type NativeAgentRuntimeEvent,
+  type NativeAgentRuntimeEventPayload,
+  type RuntimeReplayCursor,
+  type RuntimeReplaySubscription,
+  type UnsequencedAgentRuntimeEvent,
 } from "./protocol";
+export { RuntimeEventReplayBuffer } from "./replay-buffer";
 export { serveAgentHost, type RunningAgentHost } from "./serve";
 export { generateToken, isLoopbackBind, tokensEqual } from "./token";
 export {
