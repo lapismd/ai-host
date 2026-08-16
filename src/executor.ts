@@ -87,6 +87,9 @@ export type AcpxRuntimeLike = {
       availableModelIds?: string[];
     };
   }>;
+  getCapabilities?(input: { handle: AcpRuntimeHandle }):
+    | Promise<{ configOptionKeys?: string[] }>
+    | { configOptionKeys?: string[] };
   setConfigOption?(input: {
     handle: AcpRuntimeHandle;
     key: string;
@@ -214,7 +217,7 @@ export function createAgentRuntimeExecutor(options?: {
         agent,
         thinking: payload.thinking,
       });
-      if (thinking) {
+      if (thinking && (await supportsThinkingConfiguration(runtime, handle))) {
         try {
           if (!runtime.setConfigOption) {
             throw new Error(
@@ -350,6 +353,16 @@ export function createAgentRuntimeExecutor(options?: {
       resolve(normalizePermissionDecision(decision));
     },
   };
+}
+
+async function supportsThinkingConfiguration(
+  runtime: AcpxRuntimeLike,
+  handle: AcpRuntimeHandle,
+): Promise<boolean> {
+  if (!runtime.getCapabilities) return true;
+  const capabilities = await runtime.getCapabilities({ handle });
+  const keys = capabilities.configOptionKeys ?? [];
+  return keys.includes("thinking") || keys.includes("effort");
 }
 
 export async function defaultCreateAcpxRuntime(

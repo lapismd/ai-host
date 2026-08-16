@@ -28,7 +28,7 @@
     }
   },
   "dependencies": {
-    "acpx": "^0.8.0",
+    "acpx": "^0.13.0",
     "ws": "^8.18.3"
   },
   "devDependencies": {
