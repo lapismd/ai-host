@@ -44,7 +44,8 @@ function trim(value: string | undefined): string {
 }
 
 function readEnv(name: string): string {
-  const meta = (import.meta as { env?: Record<string, string | undefined> }).env;
+  const meta = (import.meta as { env?: Record<string, string | undefined> })
+    .env;
   const fromMeta = trim(meta?.[name]);
   if (fromMeta) return fromMeta;
   if (typeof process !== "undefined") {
@@ -52,7 +53,9 @@ function readEnv(name: string): string {
     if (fromProcess) return fromProcess;
   }
   const globalConfig = (
-    globalThis as { __LAPIS_AGENT_RUNTIME__?: Partial<AgentRuntimeAttachConfig> }
+    globalThis as {
+      __LAPIS_AGENT_RUNTIME__?: Partial<AgentRuntimeAttachConfig>;
+    }
   ).__LAPIS_AGENT_RUNTIME__;
   if (name === "LAPIS_AGENT_RUNTIME_URL") return trim(globalConfig?.url);
   if (name === "LAPIS_AGENT_RUNTIME_TOKEN") return trim(globalConfig?.token);
@@ -75,7 +78,10 @@ export function createAgentRuntimeBridge(
   let connectPromise: Promise<void> | null = null;
   const pending = new Map<string, Pending>();
   const runtimeListeners = new Set<(event: NativeAgentRuntimeEvent) => void>();
-  const processListeners = new Set<(event: NativeAgentProcessMessage) => void>();
+  const processListeners = new Set<
+    (event: NativeAgentProcessMessage) => void
+  >();
+  const activeSessions = new Set<string>();
   let nextId = 0;
 
   function nextMessageId(): string {
@@ -176,8 +182,30 @@ export function createAgentRuntimeBridge(
       });
       next.addEventListener("close", (event) => {
         if (!settled && event.code >= 4000) {
-          fail(new Error(event.reason || "Agent-runtime authentication failed"));
+          fail(
+            new Error(event.reason || "Agent-runtime authentication failed"),
+          );
+          return;
         }
+        if (!settled) return;
+        const message = event.reason || "Agent-runtime connection closed";
+        const error = new Error(message);
+        for (const [id, waiter] of pending) {
+          pending.delete(id);
+          waiter.reject(error);
+        }
+        for (const sessionId of activeSessions) {
+          for (const listener of runtimeListeners) {
+            listener({
+              sessionId,
+              type: "closed",
+              event: { type: "error", message },
+            });
+          }
+        }
+        activeSessions.clear();
+        if (socket === next) socket = null;
+        connectPromise = null;
       });
     });
     await connectPromise;
@@ -196,6 +224,16 @@ export function createAgentRuntimeBridge(
       pending.set(id, { resolve, reject });
       socket!.send(JSON.stringify({ id, command, payload }));
     });
+    const sessionId =
+      result && typeof result === "object" && "sessionId" in result
+        ? String((result as { sessionId?: unknown }).sessionId ?? "")
+        : "";
+    if (command === "desktop_agent_acp_start" && sessionId) {
+      activeSessions.add(sessionId);
+    }
+    if (command === "desktop_agent_acp_close") {
+      activeSessions.delete(String(payload?.sessionId ?? ""));
+    }
     return result as T;
   }
 

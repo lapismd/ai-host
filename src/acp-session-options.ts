@@ -5,7 +5,6 @@ export type AcpStartSessionFields = {
 
 export type AcpxSessionOptions = {
   model?: string;
-  effort?: "low" | "medium" | "high";
 };
 
 export function toAcpxSessionOptions(
@@ -13,8 +12,13 @@ export function toAcpxSessionOptions(
 ): AcpxSessionOptions {
   const options: AcpxSessionOptions = {};
   if (payload.model?.model) options.model = payload.model.model;
-  if (payload.thinking && payload.thinking !== "off") {
-    options.effort = payload.thinking;
-  }
   return options;
+}
+
+export function toAcpxThinkingValue(
+  payload: Pick<AcpStartSessionFields, "thinking"> & { agent?: string },
+): string | undefined {
+  if (!payload.thinking) return undefined;
+  if (payload.agent === "codex" && payload.thinking === "off") return "none";
+  return payload.thinking;
 }

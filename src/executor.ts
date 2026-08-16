@@ -7,6 +7,7 @@ import type {
 } from "./protocol";
 import {
   toAcpxSessionOptions,
+  toAcpxThinkingValue,
   type AcpxSessionOptions,
 } from "./acp-session-options";
 
@@ -46,6 +47,12 @@ export type AcpPermissionDecision = {
     | "cancel";
 };
 
+export type AcpModelCatalog = {
+  agent: string;
+  currentModel?: string;
+  models: string[];
+};
+
 type AcpRuntimeHandle = {
   sessionKey: string;
   backend?: string;
@@ -74,8 +81,23 @@ export type AcpxRuntimeLike = {
       error?: { message?: string };
     }>;
   };
+  getStatus?(input: { handle: AcpRuntimeHandle }): Promise<{
+    models?: {
+      currentModelId?: string;
+      availableModelIds?: string[];
+    };
+  }>;
+  setConfigOption?(input: {
+    handle: AcpRuntimeHandle;
+    key: string;
+    value: string;
+  }): Promise<void>;
   cancel(input: { handle: AcpRuntimeHandle; reason?: string }): Promise<void>;
-  close(input: { handle: AcpRuntimeHandle; reason: string }): Promise<void>;
+  close(input: {
+    handle: AcpRuntimeHandle;
+    reason: string;
+    discardPersistentState?: boolean;
+  }): Promise<void>;
 };
 
 export type CreateAcpxRuntime = (
@@ -86,13 +108,20 @@ export type CreateAcpxRuntime = (
 ) => Promise<AcpxRuntimeLike>;
 
 export type AgentRuntimeExecutor = {
-  spawnProcess(sink: AgentHostSink, payload: SpawnPayload): { processId: string };
+  spawnProcess(
+    sink: AgentHostSink,
+    payload: SpawnPayload,
+  ): { processId: string };
   writeProcess(processId: string, data: string): void;
   killProcess(processId: string): void;
   startAcpSession(
     sink: AgentHostSink,
     payload: AcpStartPayload,
   ): Promise<{ sessionId: string }>;
+  listAcpModels(
+    sink: AgentHostSink,
+    payload: Pick<AcpStartPayload, "workspace" | "agent">,
+  ): Promise<AcpModelCatalog>;
   promptAcpSession(
     sink: AgentHostSink,
     sessionId: string,
@@ -166,6 +195,7 @@ export function createAgentRuntimeExecutor(options?: {
 
     async startAcpSession(sink, payload) {
       const sessionId = payload.resumeSessionId ?? randomUUID();
+      const agent = resolveAcpAgent(payload);
       const runtime = await createAcpx(
         sink,
         sessionId,
@@ -174,14 +204,77 @@ export function createAgentRuntimeExecutor(options?: {
       );
       const handle = await runtime.ensureSession({
         sessionKey: sessionId,
-        agent: resolveAcpAgent(payload),
+        agent,
         mode: "persistent",
         cwd: payload.workspace,
         resumeSessionId: payload.resumeSessionId,
         sessionOptions: toAcpxSessionOptions(payload),
       });
+      const thinking = toAcpxThinkingValue({
+        agent,
+        thinking: payload.thinking,
+      });
+      if (thinking) {
+        try {
+          if (!runtime.setConfigOption) {
+            throw new Error(
+              `ACP agent ${agent} does not support thinking configuration.`,
+            );
+          }
+          await runtime.setConfigOption({
+            handle,
+            key: "thinking",
+            value: thinking,
+          });
+        } catch (error) {
+          await runtime.close({
+            handle,
+            reason: "thinking configuration unavailable",
+            discardPersistentState: !payload.resumeSessionId,
+          });
+          throw error;
+        }
+      }
       acpSessions.set(sessionId, { runtime, handle, sink });
       return { sessionId };
+    },
+
+    async listAcpModels(sink, payload) {
+      const sessionId = randomUUID();
+      const agent = resolveAcpAgent(payload);
+      const runtime = await createAcpx(
+        sink,
+        sessionId,
+        { ...payload, agent },
+        pendingApprovals,
+      );
+      const handle = await runtime.ensureSession({
+        sessionKey: `model-catalog:${agent}:${sessionId}`,
+        agent,
+        mode: "oneshot",
+        cwd: payload.workspace,
+      });
+      try {
+        if (!runtime.getStatus) {
+          return { agent, models: [] };
+        }
+        const status = await runtime.getStatus({ handle });
+        const currentModel = status.models?.currentModelId?.trim() || undefined;
+        const models = [
+          ...new Set(
+            (status.models?.availableModelIds ?? [])
+              .map((model) => model.trim())
+              .filter(Boolean),
+          ),
+        ];
+        return { agent, currentModel, models };
+      } finally {
+        await runtime.close({
+          handle,
+          reason: "model catalog complete",
+          discardPersistentState: true,
+        });
+      }
     },
 
     async promptAcpSession(sink, sessionId, text) {
@@ -195,30 +288,44 @@ export function createAgentRuntimeExecutor(options?: {
         requestId: randomUUID(),
       });
       void (async () => {
-        for await (const event of turn.events) {
+        try {
+          for await (const event of turn.events) {
+            session.sink.sendRuntimeEvent({
+              sessionId,
+              type: "event",
+              event,
+            });
+          }
+          const result = await turn.result;
+          if (result.status === "failed") {
+            session.sink.sendRuntimeEvent({
+              sessionId,
+              type: "event",
+              event: {
+                type: "error",
+                message: result.error?.message ?? "ACP turn failed",
+              },
+            });
+            return;
+          }
           session.sink.sendRuntimeEvent({
             sessionId,
             type: "event",
-            event,
+            event: {
+              type: "done",
+              stopReason: result.stopReason ?? result.status,
+            },
           });
-        }
-        const result = await turn.result;
-        if (result.status === "failed") {
+        } catch (error) {
           session.sink.sendRuntimeEvent({
             sessionId,
             type: "event",
             event: {
               type: "error",
-              message: result.error?.message ?? "ACP turn failed",
+              message: error instanceof Error ? error.message : String(error),
             },
           });
-          return;
         }
-        session.sink.sendRuntimeEvent({
-          sessionId,
-          type: "event",
-          event: { type: "done", stopReason: result.stopReason ?? result.status },
-        });
       })();
     },
 
@@ -289,7 +396,10 @@ export async function defaultCreateAcpxRuntime(
           ? (raw.toolCall as Record<string, unknown>)
           : {};
       const requestId = String(
-        toolCall.toolCallId ?? raw.toolCallId ?? request.sessionId ?? randomUUID(),
+        toolCall.toolCallId ??
+          raw.toolCallId ??
+          request.sessionId ??
+          randomUUID(),
       );
       sink.sendRuntimeEvent({
         sessionId,

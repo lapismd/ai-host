@@ -31,15 +31,33 @@ function createFakeAcpx(): CreateAcpxRuntime {
               request: { requestId, id: requestId, toolName: "read" },
             });
             await new Promise<void>((resolve) => {
-              pendingApprovals.set(`${sessionId}:${requestId}`, () => resolve());
+              pendingApprovals.set(`${sessionId}:${requestId}`, () =>
+                resolve(),
+              );
             });
           }
         })();
         return {
           events,
-          result: Promise.resolve({ status: "completed", stopReason: "end_turn" }),
+          result: Promise.resolve({
+            status: "completed",
+            stopReason: "end_turn",
+          }),
         };
       },
+      async getStatus() {
+        return {
+          models: {
+            currentModelId:
+              payload.agent === "cursor" ? "composer" : "gpt-test",
+            availableModelIds:
+              payload.agent === "cursor"
+                ? ["composer", "composer-fast"]
+                : ["gpt-test"],
+          },
+        };
+      },
+      async setConfigOption() {},
       async cancel() {},
       async close() {},
     };
@@ -96,6 +114,14 @@ describe("agent-runtime websocket contract", () => {
       },
     );
     expect(sessionId).toBeTruthy();
+
+    await expect(
+      bridge.invoke("desktop_agent_acp_models", { agent: "cursor" }),
+    ).resolves.toMatchObject({
+      agent: "cursor",
+      currentModel: "composer",
+      models: ["composer", "composer-fast"],
+    });
 
     await bridge.invoke("desktop_agent_acp_prompt", {
       sessionId,

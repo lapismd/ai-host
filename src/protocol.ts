@@ -18,6 +18,7 @@ export const AUTH_CLOSE_CODE = 4401;
 
 export const AGENT_RUNTIME_COMMANDS = [
   "desktop_agent_acp_start",
+  "desktop_agent_acp_models",
   "desktop_agent_acp_prompt",
   "desktop_agent_acp_cancel",
   "desktop_agent_acp_close",

@@ -74,10 +74,16 @@ function bindAuthenticatedSocket(
   }, handshakeTimeoutMs);
 
   socket.on("message", (raw) => {
-    void handleMessage(raw.toString(), socket, options, (ok) => {
-      authenticated = ok;
-      if (ok) clearTimeout(timeout);
-    }, () => authenticated);
+    void handleMessage(
+      raw.toString(),
+      socket,
+      options,
+      (ok) => {
+        authenticated = ok;
+        if (ok) clearTimeout(timeout);
+      },
+      () => authenticated,
+    );
   });
 
   socket.on("close", () => {
@@ -128,7 +134,12 @@ async function handleMessage(
   };
 
   try {
-    const result = await dispatchCommand(options, sink, parsed.command, parsed.payload ?? {});
+    const result = await dispatchCommand(
+      options,
+      sink,
+      parsed.command,
+      parsed.payload ?? {},
+    );
     sendJson(socket, { id: parsed.id, result });
   } catch (error) {
     sendJson(socket, {
@@ -148,6 +159,11 @@ async function dispatchCommand(
 ): Promise<unknown> {
   const executor = options.executor;
   switch (command) {
+    case "desktop_agent_acp_models":
+      return executor.listAcpModels(sink, {
+        workspace: options.workspace,
+        agent: String(payload.agent ?? ""),
+      });
     case "desktop_agent_acp_start":
       return executor.startAcpSession(sink, {
         ...payload,

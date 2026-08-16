@@ -1,6 +1,7 @@
 export { resolveAcpAgent, type DesktopAcpAgent } from "./acp-agent";
 export {
   toAcpxSessionOptions,
+  toAcpxThinkingValue,
   type AcpStartSessionFields,
   type AcpxSessionOptions,
 } from "./acp-session-options";
@@ -9,6 +10,7 @@ export {
   defaultCreateAcpxRuntime,
   normalizePermissionDecision,
   type AcpPermissionDecision,
+  type AcpModelCatalog,
   type AcpStartPayload,
   type AgentHostSink,
   type AgentRuntimeExecutor,
