@@ -11,10 +11,22 @@ import {
   toAcpxThinkingValue,
   type AcpxSessionOptions,
 } from "./acp-session-options";
+import {
+  ToolBridgeBroker,
+  type ToolBridgeBrokerOptions,
+  type ToolBridgeCall,
+  type ToolBridgeCancel,
+  type ToolBridgeOpenPayload,
+  type ToolBridgeResponse,
+  type ToolBridgeSink,
+} from "./tool-bridge";
 
 export type AgentHostSink = {
+  connectionId?: string;
   sendRuntimeEvent(event: NativeAgentRuntimeEvent): void;
   sendProcessMessage(event: NativeAgentProcessMessage): void;
+  sendToolCall?(call: ToolBridgeCall): void;
+  sendToolCancel?(cancel: ToolBridgeCancel): void;
 };
 
 export type AgentRuntimeInputSink = {
@@ -27,6 +39,7 @@ export type SpawnPayload = {
   args?: string[];
   cwd?: string;
   env?: Record<string, string>;
+  appToolBridgeId?: string;
 };
 
 export type AcpStartPayload = {
@@ -35,13 +48,14 @@ export type AcpStartPayload = {
   model?: { provider?: string; model?: string };
   thinking?: "off" | "low" | "medium" | "high";
   metadata?: Record<string, unknown>;
-  tools?: Array<{
+  mcpServers?: Array<{
     name: string;
     command: string;
     args?: string[];
     env?: Record<string, string>;
   }>;
   resumeSessionId?: string;
+  appToolBridgeId?: string;
 };
 
 export type AcpPermissionDecision = {
@@ -145,30 +159,55 @@ export type AgentRuntimeExecutor = {
     requestId: string,
     decision: string | AcpPermissionDecision,
   ): void;
+  openToolBridge(
+    sink: AgentHostSink,
+    payload: ToolBridgeOpenPayload,
+  ): Promise<{ bridgeId: string }>;
+  respondToolBridge(sink: AgentHostSink, payload: ToolBridgeResponse): void;
+  closeToolBridge(sink: AgentHostSink, bridgeId: string): void;
+  disconnectConnection(connectionId: string): void;
+  close(): Promise<void>;
 };
 
 export function createAgentRuntimeExecutor(options?: {
   createAcpxRuntime?: CreateAcpxRuntime;
+  toolBridgeBroker?: ToolBridgeBroker;
+  toolBridgeOptions?: ToolBridgeBrokerOptions;
 }): AgentRuntimeExecutor {
   const processes = new Map<string, ChildProcessWithoutNullStreams>();
+  const processBridges = new Map<string, { connectionId: string; bridgeId: string }>();
   const acpSessions = new Map<string, AcpSessionState>();
   const pendingApprovals = new Map<
     string,
     (decision: AcpPermissionDecision) => void
   >();
   const createAcpx = options?.createAcpxRuntime ?? defaultCreateAcpxRuntime;
+  const toolBridges =
+    options?.toolBridgeBroker ?? new ToolBridgeBroker(options?.toolBridgeOptions);
 
   return {
     spawnProcess(sink, payload) {
       const command = payload.command?.trim();
       if (!command) throw new Error("agent-runtime spawn requires a command");
       const processId = randomUUID();
-      const child = spawn(command, payload.args ?? [], {
+      const bridge = payload.appToolBridgeId
+        ? toolBridges.serverContribution(
+            requiredConnectionId(sink),
+            payload.appToolBridgeId,
+          )
+        : undefined;
+      const child = spawn(command, nativeProcessArgs(payload.args ?? [], bridge), {
         cwd: payload.cwd,
-        env: { ...process.env, ...payload.env },
+        env: { ...process.env, ...payload.env, ...bridge?.env },
         stdio: ["pipe", "pipe", "pipe"],
       });
       processes.set(processId, child);
+      if (bridge && payload.appToolBridgeId) {
+        processBridges.set(processId, {
+          connectionId: requiredConnectionId(sink),
+          bridgeId: payload.appToolBridgeId,
+        });
+      }
       child.stdout.setEncoding("utf8");
       child.stderr.setEncoding("utf8");
       child.stdout.on("data", (data: string) => {
@@ -179,6 +218,7 @@ export function createAgentRuntimeExecutor(options?: {
       });
       child.on("exit", (code) => {
         processes.delete(processId);
+        closeProcessBridge(processId, processBridges, toolBridges);
         sink.sendProcessMessage({
           processId,
           type: "exit",
@@ -199,16 +239,36 @@ export function createAgentRuntimeExecutor(options?: {
       if (!child) return;
       child.kill();
       processes.delete(processId);
+      closeProcessBridge(processId, processBridges, toolBridges);
     },
 
     async startAcpSession(sink, payload) {
       const sessionId = payload.resumeSessionId ?? randomUUID();
       const existing = acpSessions.get(sessionId);
       if (existing) {
-        existing.sink = sink;
-        return { sessionId };
+        if (existing.appToolBridgeId !== payload.appToolBridgeId) {
+          await existing.runtime.close({
+            handle: existing.handle,
+            reason: "app tool bridge changed",
+          });
+          acpSessions.delete(sessionId);
+          if (existing.connectionId && existing.appToolBridgeId) {
+            toolBridges.closeBridge(
+              existing.connectionId,
+              existing.appToolBridgeId,
+            );
+          }
+        } else {
+          existing.sink = sink;
+          return { sessionId };
+        }
       }
-      const agent = resolveAcpAgent(payload);
+      const effectivePayload = withAppToolMcpServer(
+        payload,
+        sink,
+        toolBridges,
+      );
+      const agent = resolveAcpAgent(effectivePayload);
       const session: AcpSessionState = {
         sessionId,
         sink,
@@ -228,20 +288,20 @@ export function createAgentRuntimeExecutor(options?: {
       const runtime = await createAcpx(
         runtimeSink,
         sessionId,
-        payload,
+        effectivePayload,
         pendingApprovals,
       );
       const handle = await runtime.ensureSession({
         sessionKey: sessionId,
         agent,
         mode: "persistent",
-        cwd: payload.workspace,
-        resumeSessionId: payload.resumeSessionId,
-        sessionOptions: toAcpxSessionOptions(payload),
+        cwd: effectivePayload.workspace,
+        resumeSessionId: effectivePayload.resumeSessionId,
+        sessionOptions: toAcpxSessionOptions(effectivePayload),
       });
       const thinking = toAcpxThinkingValue({
         agent,
-        thinking: payload.thinking,
+        thinking: effectivePayload.thinking,
       });
       if (thinking && (await supportsThinkingConfiguration(runtime, handle))) {
         try {
@@ -266,6 +326,8 @@ export function createAgentRuntimeExecutor(options?: {
       }
       session.runtime = runtime;
       session.handle = handle;
+      session.connectionId = sink.connectionId;
+      session.appToolBridgeId = effectivePayload.appToolBridgeId;
       acpSessions.set(sessionId, session);
       return { sessionId };
     },
@@ -387,6 +449,9 @@ export function createAgentRuntimeExecutor(options?: {
       if (!session) return;
       await session.runtime.close({ handle: session.handle, reason: "close" });
       acpSessions.delete(sessionId);
+      if (session.connectionId && session.appToolBridgeId) {
+        toolBridges.closeBridge(session.connectionId, session.appToolBridgeId);
+      }
     },
 
     respondAcpSession(sessionId, requestId, decision) {
@@ -395,6 +460,29 @@ export function createAgentRuntimeExecutor(options?: {
       if (!resolve) throw new Error(`Unknown ACP approval: ${key}`);
       pendingApprovals.delete(key);
       resolve(normalizePermissionDecision(decision));
+    },
+
+    openToolBridge(sink, payload) {
+      return toolBridges.open(requiredToolSink(sink), payload);
+    },
+
+    respondToolBridge(sink, payload) {
+      toolBridges.respond(requiredConnectionId(sink), payload);
+    },
+
+    closeToolBridge(sink, bridgeId) {
+      toolBridges.closeBridge(requiredConnectionId(sink), bridgeId);
+    },
+
+    disconnectConnection(connectionId) {
+      toolBridges.closeConnection(connectionId);
+    },
+
+    async close() {
+      for (const child of processes.values()) child.kill();
+      processes.clear();
+      processBridges.clear();
+      await toolBridges.close();
     },
   };
 }
@@ -406,6 +494,8 @@ type AcpSessionState = {
   sink: AgentHostSink;
   currentRunId: string;
   nextSequence: number;
+  connectionId?: string;
+  appToolBridgeId?: string;
 };
 
 function emitRuntimeEvent(
@@ -484,12 +574,7 @@ export async function defaultCreateAcpxRuntime(
       stateDir: `${cwd}/.lapis/ai-sessions`,
     }),
     agentRegistry: acpx.createAgentRegistry(),
-    mcpServers: (payload.tools ?? []).map((tool) => ({
-      name: tool.name,
-      command: tool.command,
-      args: tool.args ?? [],
-      env: tool.env,
-    })),
+    mcpServers: toAcpxMcpServers(payload.mcpServers),
     permissionMode: "deny-all",
     onPermissionRequest: async (request: {
       sessionId?: string;
@@ -528,6 +613,84 @@ export async function defaultCreateAcpxRuntime(
       });
     },
   });
+}
+
+function requiredConnectionId(sink: AgentHostSink): string {
+  if (!sink.connectionId) throw new Error("Agent host connection identity missing");
+  return sink.connectionId;
+}
+
+function requiredToolSink(sink: AgentHostSink): ToolBridgeSink {
+  if (!sink.sendToolCall || !sink.sendToolCancel) {
+    throw new Error("Agent host does not support app tool events");
+  }
+  return {
+    connectionId: requiredConnectionId(sink),
+    sendToolCall: sink.sendToolCall,
+    sendToolCancel: sink.sendToolCancel,
+  };
+}
+
+function withAppToolMcpServer(
+  payload: AcpStartPayload,
+  sink: AgentHostSink,
+  broker: ToolBridgeBroker,
+): AcpStartPayload {
+  if ((payload.mcpServers ?? []).some((server) => server.name === "lapis-tools")) {
+    throw new Error("MCP server name is reserved: lapis-tools");
+  }
+  if (!payload.appToolBridgeId) return payload;
+  const appServer = broker.serverContribution(
+    requiredConnectionId(sink),
+    payload.appToolBridgeId,
+  );
+  return {
+    ...payload,
+    mcpServers: [...(payload.mcpServers ?? []), appServer],
+  };
+}
+
+export function toAcpxMcpServers(
+  servers: AcpStartPayload["mcpServers"],
+): Array<{
+  name: string;
+  command: string;
+  args: string[];
+  env: Array<{ name: string; value: string }>;
+}> {
+  return (servers ?? []).map((server) => ({
+    name: server.name,
+    command: server.command,
+    args: server.args ?? [],
+    env: Object.entries(server.env ?? {}).map(([name, value]) => ({
+      name,
+      value,
+    })),
+  }));
+}
+
+function nativeProcessArgs(
+  args: string[],
+  bridge: ReturnType<ToolBridgeBroker["serverContribution"]> | undefined,
+): string[] {
+  if (!bridge) return args;
+  return [
+    ...args,
+    "-c",
+    `mcp_servers.${bridge.name}.command=${JSON.stringify(bridge.command)}`,
+    "-c",
+    `mcp_servers.${bridge.name}.args=${JSON.stringify(bridge.args)}`,
+  ];
+}
+
+function closeProcessBridge(
+  processId: string,
+  processBridges: Map<string, { connectionId: string; bridgeId: string }>,
+  broker: ToolBridgeBroker,
+): void {
+  const bridge = processBridges.get(processId);
+  processBridges.delete(processId);
+  if (bridge) broker.closeBridge(bridge.connectionId, bridge.bridgeId);
 }
 
 export function normalizePermissionDecision(

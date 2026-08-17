@@ -89,7 +89,7 @@ describe("agent-runtime websocket handshake", () => {
     await expect(reply).resolves.toMatchObject({
       id: "hello-1",
       type: "hello.ok",
-      protocol: 2,
+      protocol: 3,
     });
     socket.close();
   });

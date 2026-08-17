@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { createAgentRuntimeExecutor, type AcpxRuntimeLike } from "./executor";
+import {
+  createAgentRuntimeExecutor,
+  toAcpxMcpServers,
+  type AcpxRuntimeLike,
+} from "./executor";
 
 const sink = {
   sendRuntimeEvent: vi.fn(),
@@ -139,5 +143,45 @@ describe("agent runtime executor sequencing", () => {
     ).toEqual([1, 2]);
     await executor.closeAcpSession(first.sessionId);
     sink.sendRuntimeEvent.mockClear();
+  });
+});
+
+describe("agent runtime MCP projection", () => {
+  it("converts environment records to ACP name/value entries", () => {
+    expect(
+      toAcpxMcpServers([
+        {
+          name: "example",
+          command: "example-mcp",
+          env: { ALPHA: "one", BETA: "two" },
+        },
+      ]),
+    ).toEqual([
+      {
+        name: "example",
+        command: "example-mcp",
+        args: [],
+        env: [
+          { name: "ALPHA", value: "one" },
+          { name: "BETA", value: "two" },
+        ],
+      },
+    ]);
+  });
+
+  it("rejects the reserved lapis-tools server name", async () => {
+    const executor = createAgentRuntimeExecutor({
+      createAcpxRuntime: async () => {
+        throw new Error("runtime must not start");
+      },
+    });
+
+    await expect(
+      executor.startAcpSession(sink, {
+        agent: "codex",
+        mcpServers: [{ name: "lapis-tools", command: "forged" }],
+      }),
+    ).rejects.toThrow("MCP server name is reserved: lapis-tools");
+    await executor.close();
   });
 });

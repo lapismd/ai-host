@@ -22,7 +22,7 @@ export type NativeAgentRuntimeEvent = {
   event: NativeAgentRuntimeEventPayload;
 };
 
-export const AGENT_RUNTIME_PROTOCOL = 2;
+export const AGENT_RUNTIME_PROTOCOL = 3;
 export const HELLO_TIMEOUT_MS = 5_000;
 export const AUTH_CLOSE_CODE = 4401;
 export const REPLAY_MAX_FRAMES = 10_000;
@@ -36,6 +36,9 @@ export const AGENT_RUNTIME_COMMANDS = [
   "desktop_agent_acp_cancel",
   "desktop_agent_acp_close",
   "desktop_agent_acp_respond",
+  "desktop_agent_tools_open",
+  "desktop_agent_tools_respond",
+  "desktop_agent_tools_close",
   "desktop_agent_process_spawn",
   "desktop_agent_process_write",
   "desktop_agent_process_kill",
@@ -87,6 +90,16 @@ export type RuntimeReplaySubscription = {
 export type ProcessMessageFrame = {
   type: "agent-process-message";
   event: NativeAgentProcessMessage;
+};
+
+export type ToolCallFrame = {
+  type: "desktop_agent_tool_call";
+  event: import("./tool-bridge").ToolBridgeCall;
+};
+
+export type ToolCancelFrame = {
+  type: "desktop_agent_tool_cancel";
+  event: import("./tool-bridge").ToolBridgeCancel;
 };
 
 export function isHelloRequest(value: unknown): value is HelloRequest {

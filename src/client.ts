@@ -8,7 +8,10 @@ import {
   type ProcessMessageFrame,
   type RuntimeReplaySubscription,
   type RuntimeEventFrame,
+  type ToolCallFrame,
+  type ToolCancelFrame,
 } from "./protocol";
+import type { ToolBridgeCall, ToolBridgeCancel } from "./tool-bridge";
 
 export type AgentRuntimeAttachConfig = {
   url: string;
@@ -34,6 +37,8 @@ export type AgentRuntimeBridge = {
   onAgentProcessMessage?(
     listener: (event: NativeAgentProcessMessage) => void,
   ): () => void;
+  onAgentToolCall?(listener: (event: ToolBridgeCall) => void): () => void;
+  onAgentToolCancel?(listener: (event: ToolBridgeCancel) => void): () => void;
 };
 
 type Pending = {
@@ -83,6 +88,8 @@ export function createAgentRuntimeBridge(
   const processListeners = new Set<
     (event: NativeAgentProcessMessage) => void
   >();
+  const toolCallListeners = new Set<(event: ToolBridgeCall) => void>();
+  const toolCancelListeners = new Set<(event: ToolBridgeCancel) => void>();
   const activeSessions = new Map<string, number>();
   const replayGapSequences = new Map<string, number>();
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -119,6 +126,16 @@ export function createAgentRuntimeBridge(
     if (record.type === "agent-process-message") {
       const frame = parsed as ProcessMessageFrame;
       for (const listener of processListeners) listener(frame.event);
+      return;
+    }
+    if (record.type === "desktop_agent_tool_call") {
+      const frame = parsed as ToolCallFrame;
+      for (const listener of toolCallListeners) listener(frame.event);
+      return;
+    }
+    if (record.type === "desktop_agent_tool_cancel") {
+      const frame = parsed as ToolCancelFrame;
+      for (const listener of toolCancelListeners) listener(frame.event);
       return;
     }
     if (typeof record.id === "string") {
@@ -345,7 +362,9 @@ export function createAgentRuntimeBridge(
         provider: "lapis-ai-host",
         details: {
           protocol: "desktop_agent_*",
+          protocolVersion: String(AGENT_RUNTIME_PROTOCOL),
           transport: "websocket",
+          appTools: "stdio-mcp",
         },
       },
     },
@@ -354,6 +373,8 @@ export function createAgentRuntimeBridge(
       disposed = true;
       activeSessions.clear();
       replayGapSequences.clear();
+      toolCallListeners.clear();
+      toolCancelListeners.clear();
       if (reconnectTimer) clearTimeout(reconnectTimer);
       reconnectTimer = null;
       const error = new Error("Agent-runtime bridge disposed");
@@ -379,6 +400,14 @@ export function createAgentRuntimeBridge(
       return () => {
         processListeners.delete(listener);
       };
+    },
+    onAgentToolCall(listener) {
+      toolCallListeners.add(listener);
+      return () => toolCallListeners.delete(listener);
+    },
+    onAgentToolCancel(listener) {
+      toolCancelListeners.add(listener);
+      return () => toolCancelListeners.delete(listener);
     },
   };
 }

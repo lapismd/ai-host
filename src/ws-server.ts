@@ -1,4 +1,5 @@
 import { WebSocketServer, type WebSocket } from "ws";
+import { randomUUID } from "node:crypto";
 import type { AgentHostSink, AgentRuntimeExecutor } from "./executor";
 import {
   AGENT_RUNTIME_PROTOCOL,
@@ -44,7 +45,13 @@ export async function startAgentRuntimeServer(
   const broker = new RuntimeEventBroker();
 
   server.on("connection", (socket) => {
-    bindAuthenticatedSocket(socket, options, handshakeTimeoutMs, broker);
+    bindAuthenticatedSocket(
+      socket,
+      options,
+      handshakeTimeoutMs,
+      broker,
+      randomUUID(),
+    );
   });
 
   await waitForListening(server);
@@ -60,8 +67,8 @@ export async function startAgentRuntimeServer(
         client.close(1012, "agent-runtime transport restart");
       }
     },
-    close: () =>
-      new Promise((resolve, reject) => {
+    close: async () => {
+      await new Promise<void>((resolve, reject) => {
         for (const client of server.clients) {
           client.terminate();
         }
@@ -69,7 +76,9 @@ export async function startAgentRuntimeServer(
           if (error) reject(error);
           else resolve();
         });
-      }),
+      });
+      await options.executor.close();
+    },
   };
 }
 
@@ -78,6 +87,7 @@ function bindAuthenticatedSocket(
   options: AgentRuntimeServerOptions,
   handshakeTimeoutMs: number,
   broker: RuntimeEventBroker,
+  connectionId: string,
 ): void {
   let authenticated = false;
   const timeout = setTimeout(() => {
@@ -90,6 +100,7 @@ function bindAuthenticatedSocket(
       socket,
       options,
       broker,
+      connectionId,
       (ok) => {
         authenticated = ok;
         if (ok) clearTimeout(timeout);
@@ -101,6 +112,7 @@ function bindAuthenticatedSocket(
   socket.on("close", () => {
     clearTimeout(timeout);
     broker.disconnect(socket);
+    options.executor.disconnectConnection(connectionId);
   });
 }
 
@@ -109,6 +121,7 @@ async function handleMessage(
   socket: WebSocket,
   options: AgentRuntimeServerOptions,
   broker: RuntimeEventBroker,
+  connectionId: string,
   setAuthenticated: (ok: boolean) => void,
   isAuthenticated: () => boolean,
 ): Promise<void> {
@@ -139,11 +152,18 @@ async function handleMessage(
 
   if (!isCommandRequest(parsed)) return;
   const sink: AgentHostSink = {
+    connectionId,
     sendRuntimeEvent(event) {
       broker.publish(event);
     },
     sendProcessMessage(event) {
       sendJson(socket, { type: "agent-process-message", event });
+    },
+    sendToolCall(event) {
+      sendJson(socket, { type: "desktop_agent_tool_call", event });
+    },
+    sendToolCancel(event) {
+      sendJson(socket, { type: "desktop_agent_tool_cancel", event });
     },
   };
 
@@ -200,6 +220,28 @@ async function dispatchCommand(
         ...payload,
         workspace: options.workspace,
       });
+    case "desktop_agent_tools_open":
+      return executor.openToolBridge(sink, {
+        bindingId: String(payload.bindingId ?? ""),
+        conversationId: String(payload.conversationId ?? ""),
+        descriptors: Array.isArray(payload.descriptors)
+          ? (payload.descriptors as never[])
+          : [],
+      });
+    case "desktop_agent_tools_respond":
+      executor.respondToolBridge(sink, {
+        bridgeId: String(payload.bridgeId ?? ""),
+        callId: String(payload.callId ?? ""),
+        result: payload.result,
+        error:
+          payload.error && typeof payload.error === "object"
+            ? (payload.error as { code: string; message: string })
+            : undefined,
+      });
+      return null;
+    case "desktop_agent_tools_close":
+      executor.closeToolBridge(sink, String(payload.bridgeId ?? ""));
+      return null;
     case "desktop_agent_acp_prompt":
       return executor.promptAcpSession(
         sink,

@@ -48,3 +48,14 @@ export {
   type AgentRuntimeServer,
   type AgentRuntimeServerOptions,
 } from "./ws-server";
+export {
+  ToolBridgeBroker,
+  type ToolBridgeBrokerOptions,
+  type ToolBridgeCall,
+  type ToolBridgeCancel,
+  type ToolBridgeDescriptor,
+  type ToolBridgeOpenPayload,
+  type ToolBridgeResponse,
+  type ToolBridgeServerContribution,
+  type ToolBridgeSink,
+} from "./tool-bridge";

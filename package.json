@@ -7,7 +7,8 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "bin": {
-    "lapis-ai-host": "./bin/lapis-ai-host.mjs"
+    "lapis-ai-host": "./bin/lapis-ai-host.mjs",
+    "lapis-mcp-shim": "./bin/lapis-mcp-shim.mjs"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/bundle-cli.mjs",
@@ -28,6 +29,7 @@
     }
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "acpx": "^0.13.0",
     "ws": "^8.18.3"
   },

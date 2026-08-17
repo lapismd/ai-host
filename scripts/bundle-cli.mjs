@@ -15,4 +15,14 @@ await build({
   external: ["acpx", "ws"],
 });
 
-console.log("[ai-host] cli bundle written");
+await build({
+  entryPoints: [path.join(packageRoot, "src/mcp-shim.ts")],
+  outfile: path.join(packageRoot, "dist/mcp-shim.js"),
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  target: "node22",
+  banner: { js: "#!/usr/bin/env node" },
+});
+
+console.log("[ai-host] cli and MCP shim bundles written");
