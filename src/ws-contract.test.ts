@@ -1,3 +1,8 @@
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import {
+  getDefaultEnvironment,
+  StdioClientTransport,
+} from "@modelcontextprotocol/sdk/client/stdio.js";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,6 +18,7 @@ import {
   type CreateAcpxRuntime,
 } from "./executor";
 import { serveAgentHost, type RunningAgentHost } from "./serve";
+import type { ToolBridgeBrokerOptions } from "./tool-bridge";
 
 function createFakeAcpx(): CreateAcpxRuntime {
   return async (sink, sessionId, payload, pendingApprovals) => {
@@ -73,7 +79,10 @@ describe("agent-runtime websocket contract", () => {
     host = undefined;
   });
 
-  async function startHost(createAcpxRuntime = createFakeAcpx()) {
+  async function startHost(
+    createAcpxRuntime = createFakeAcpx(),
+    toolBridgeOptions?: ToolBridgeBrokerOptions,
+  ) {
     const workspace = await mkdtemp(join(tmpdir(), "lapis-ai-host-"));
     host = await serveAgentHost(
       {
@@ -86,12 +95,121 @@ describe("agent-runtime websocket contract", () => {
       {
         executor: createAgentRuntimeExecutor({
           createAcpxRuntime,
+          toolBridgeOptions,
         }),
         print: () => {},
       },
     );
     return host;
   }
+
+  it("routes app tool calls through the authenticated remote host and revokes them on disconnect", async () => {
+    let appServer:
+      | {
+          name: string;
+          command: string;
+          args?: string[];
+          env?: Record<string, string>;
+        }
+      | undefined;
+    const baseRuntime = createFakeAcpx();
+    const running = await startHost(
+      async (sink, sessionId, payload, pendingApprovals) => {
+        appServer = payload.mcpServers?.find(
+          (server) => server.name === "lapis-tools",
+        );
+        return baseRuntime(sink, sessionId, payload, pendingApprovals);
+      },
+      {
+        shimPath: new URL("./mcp-shim.ts", import.meta.url).pathname,
+        shimArgsPrefix: ["--import", "tsx"],
+      },
+    );
+    const bridge = createAgentRuntimeBridge({
+      url: running.url,
+      token: running.token,
+    });
+    const calls: Array<{
+      bridgeId: string;
+      bindingId: string;
+      callId: string;
+      name: string;
+      input: unknown;
+    }> = [];
+    const cancellations: Array<{ callId: string }> = [];
+    bridge.onAgentToolCall?.((event) => calls.push(event));
+    bridge.onAgentToolCancel?.((event) => cancellations.push(event));
+    let mcpClient: Client | undefined;
+
+    try {
+      const opened = await bridge.invoke<{ bridgeId: string }>(
+        "desktop_agent_tools_open",
+        {
+          bindingId: "binding-remote-1",
+          conversationId: "conversation-remote-1",
+          descriptors: [
+            {
+              name: "notes_read",
+              description: "Read a scoped note",
+              inputSchema: { type: "object" },
+              effect: "read",
+            },
+          ],
+        },
+      );
+      await bridge.invoke("desktop_agent_acp_start", {
+        agent: "codex",
+        appToolBridgeId: opened.bridgeId,
+      });
+      if (!appServer) throw new Error("Remote ACP session omitted lapis-tools");
+
+      const transport = new StdioClientTransport({
+        command: appServer.command,
+        args: appServer.args ?? [],
+        env: { ...getDefaultEnvironment(), ...appServer.env },
+        stderr: "pipe",
+      });
+      mcpClient = new Client({ name: "remote-bridge-test", version: "1.0.0" });
+      await mcpClient.connect(transport);
+      await expect(mcpClient.listTools()).resolves.toMatchObject({
+        tools: [{ name: "notes_read" }],
+      });
+
+      const completedCall = mcpClient.callTool({
+        name: "notes_read",
+        arguments: { path: "Projects/alpha.md" },
+      });
+      await expect.poll(() => calls.length).toBe(1);
+      expect(calls[0]).toMatchObject({
+        bridgeId: opened.bridgeId,
+        bindingId: "binding-remote-1",
+        name: "notes_read",
+        input: { path: "Projects/alpha.md" },
+      });
+      await bridge.invoke("desktop_agent_tools_respond", {
+        bridgeId: opened.bridgeId,
+        callId: calls[0]!.callId,
+        result: { content: [{ type: "text", text: "remote note" }] },
+      });
+      await expect(completedCall).resolves.toMatchObject({
+        content: [{ type: "text", text: "remote note" }],
+      });
+
+      const cancelledCall = mcpClient.callTool({
+        name: "notes_read",
+        arguments: { path: "Projects/beta.md" },
+      });
+      void cancelledCall.catch(() => {});
+      await expect.poll(() => calls.length).toBe(2);
+      running.disconnectClients();
+      await expect.poll(() => cancellations.length).toBe(1);
+      expect(cancellations[0]?.callId).toBe(calls[1]?.callId);
+      await expect(cancelledCall).rejects.toThrow();
+    } finally {
+      await mcpClient?.close().catch(() => {});
+      bridge.dispose();
+    }
+  });
 
   it("runs start, prompt, permission, cancel, and close over the shared protocol", async () => {
     const running = await startHost();
