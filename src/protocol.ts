@@ -23,6 +23,7 @@ export type NativeAgentRuntimeEvent = {
 };
 
 export const AGENT_RUNTIME_PROTOCOL = 3;
+export const MIN_AGENT_RUNTIME_PROTOCOL = 2;
 export const HELLO_TIMEOUT_MS = 5_000;
 export const AUTH_CLOSE_CODE = 4401;
 export const REPLAY_MAX_FRAMES = 10_000;
@@ -55,7 +56,7 @@ export type HelloRequest = {
 export type HelloOk = {
   id: string;
   type: "hello.ok";
-  protocol: typeof AGENT_RUNTIME_PROTOCOL;
+  protocol: number;
 };
 
 export type CommandRequest = {

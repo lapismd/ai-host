@@ -136,11 +136,13 @@ async function main(): Promise<void> {
     })),
   }));
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
-    return (await broker.call(
-      request.params.name,
-      request.params.arguments ?? {},
-      extra.signal,
-    )) as never;
+    return toMcpToolResult(
+      await broker.call(
+        request.params.name,
+        request.params.arguments ?? {},
+        extra.signal,
+      ),
+    ) as never;
   });
   const shutdown = () => {
     broker.close();
@@ -149,6 +151,19 @@ async function main(): Promise<void> {
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
   await server.connect(new StdioServerTransport());
+}
+
+function toMcpToolResult(value: unknown): unknown {
+  if (!isRecord(value) || value.structuredContent === undefined) return value;
+  if (isRecord(value.structuredContent)) return value;
+  return {
+    ...value,
+    structuredContent: { value: value.structuredContent },
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function requiredEnv(name: string): string {

@@ -1,5 +1,6 @@
 import {
   AGENT_RUNTIME_PROTOCOL,
+  MIN_AGENT_RUNTIME_PROTOCOL,
   isHelloRequest,
   type CommandResult,
   type HelloOk,
@@ -90,11 +91,25 @@ export function createAgentRuntimeBridge(
   >();
   const toolCallListeners = new Set<(event: ToolBridgeCall) => void>();
   const toolCancelListeners = new Set<(event: ToolBridgeCancel) => void>();
+  const activeToolCalls = new Map<string, ToolBridgeCall>();
+  const activeToolBridges = new Set<string>();
   const activeSessions = new Map<string, number>();
   const replayGapSequences = new Map<string, number>();
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
   let nextId = 0;
+  let negotiatedProtocol = AGENT_RUNTIME_PROTOCOL;
+  const agentRuntimeCapability = {
+    id: "agent-runtime" as const,
+    status: "available" as const,
+    provider: "lapis-ai-host",
+    details: {
+      protocol: "desktop_agent_*",
+      protocolVersion: String(AGENT_RUNTIME_PROTOCOL),
+      transport: "websocket",
+      appTools: "stdio-mcp",
+    },
+  };
 
   function nextMessageId(): string {
     nextId += 1;
@@ -130,11 +145,13 @@ export function createAgentRuntimeBridge(
     }
     if (record.type === "desktop_agent_tool_call") {
       const frame = parsed as ToolCallFrame;
+      activeToolCalls.set(toolCallKey(frame.event), frame.event);
       for (const listener of toolCallListeners) listener(frame.event);
       return;
     }
     if (record.type === "desktop_agent_tool_cancel") {
       const frame = parsed as ToolCancelFrame;
+      activeToolCalls.delete(toolCallKey(frame.event));
       for (const listener of toolCancelListeners) listener(frame.event);
       return;
     }
@@ -185,6 +202,40 @@ export function createAgentRuntimeBridge(
     }, 250);
   }
 
+  function cancelDisconnectedToolCalls(): void {
+    for (const call of activeToolCalls.values()) {
+      const cancel: ToolBridgeCancel = {
+        bridgeId: call.bridgeId,
+        bindingId: call.bindingId,
+        callId: call.callId,
+      };
+      for (const listener of toolCancelListeners) listener(cancel);
+    }
+    activeToolCalls.clear();
+    if (activeToolBridges.size === 0) return;
+    for (const [sessionId, previous] of activeSessions) {
+      const sequence = previous + 1;
+      activeSessions.set(sessionId, sequence);
+      for (const listener of runtimeListeners) {
+        listener({
+          sessionId,
+          runId: "app-tool-bridge-disconnect",
+          sequence,
+          event: {
+            type: "closed",
+            event: {
+              type: "error",
+              code: "AGENT_TOOL_BRIDGE_DISCONNECTED",
+              message:
+                "Application-tool authorization was revoked when the agent host disconnected. Retry to create a new binding.",
+            },
+          },
+        });
+      }
+    }
+    activeToolBridges.clear();
+  }
+
   async function ensureConnected(): Promise<void> {
     if (disposed) throw new Error("Agent-runtime bridge is disposed");
     if (socket?.readyState === WebSocket.OPEN && connectPromise) {
@@ -223,8 +274,16 @@ export function createAgentRuntimeBridge(
           typeof parsed === "object" &&
           (parsed as HelloOk).type === "hello.ok" &&
           (parsed as HelloOk).id === helloId &&
-          (parsed as HelloOk).protocol === AGENT_RUNTIME_PROTOCOL
+          Number.isInteger((parsed as HelloOk).protocol) &&
+          (parsed as HelloOk).protocol >= MIN_AGENT_RUNTIME_PROTOCOL &&
+          (parsed as HelloOk).protocol <= AGENT_RUNTIME_PROTOCOL
         ) {
+          negotiatedProtocol = (parsed as HelloOk).protocol;
+          agentRuntimeCapability.details.protocolVersion = String(
+            negotiatedProtocol,
+          );
+          agentRuntimeCapability.details.appTools =
+            negotiatedProtocol >= 3 ? "stdio-mcp" : "unavailable";
           next.removeEventListener("message", onHandshake);
           next.addEventListener("message", (later) => {
             handleFrame(String(later.data));
@@ -313,6 +372,7 @@ export function createAgentRuntimeBridge(
           pending.delete(id);
           waiter.reject(error);
         }
+        cancelDisconnectedToolCalls();
         if (socket === next) socket = null;
         connectPromise = null;
         scheduleReconnect();
@@ -326,6 +386,11 @@ export function createAgentRuntimeBridge(
     payload?: Record<string, unknown>,
   ): Promise<T> {
     await ensureConnected();
+    if (command.startsWith("desktop_agent_tools_") && negotiatedProtocol < 3) {
+      throw new Error(
+        "Application tools require an agent host with protocol v3 support.",
+      );
+    }
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       throw new Error("Agent-runtime socket is not open");
     }
@@ -334,6 +399,24 @@ export function createAgentRuntimeBridge(
       pending.set(id, { resolve, reject });
       socket!.send(JSON.stringify({ id, command, payload }));
     });
+    if (command === "desktop_agent_tools_open") {
+      const bridgeId = String(
+        (result as { bridgeId?: unknown } | null)?.bridgeId ?? "",
+      );
+      if (bridgeId) activeToolBridges.add(bridgeId);
+    }
+    if (command === "desktop_agent_tools_respond") {
+      activeToolCalls.delete(
+        `${String(payload?.bridgeId ?? "")}:${String(payload?.callId ?? "")}`,
+      );
+    }
+    if (command === "desktop_agent_tools_close") {
+      const bridgeId = String(payload?.bridgeId ?? "");
+      activeToolBridges.delete(bridgeId);
+      for (const [key, call] of activeToolCalls) {
+        if (call.bridgeId === bridgeId) activeToolCalls.delete(key);
+      }
+    }
     const sessionId =
       result && typeof result === "object" && "sessionId" in result
         ? String((result as { sessionId?: unknown }).sessionId ?? "")
@@ -356,25 +439,17 @@ export function createAgentRuntimeBridge(
   return {
     runtime: "electron-desktop",
     capabilities: {
-      "agent-runtime": {
-        id: "agent-runtime",
-        status: "available",
-        provider: "lapis-ai-host",
-        details: {
-          protocol: "desktop_agent_*",
-          protocolVersion: String(AGENT_RUNTIME_PROTOCOL),
-          transport: "websocket",
-          appTools: "stdio-mcp",
-        },
-      },
+      "agent-runtime": agentRuntimeCapability,
     },
     invoke,
     dispose() {
       disposed = true;
+      cancelDisconnectedToolCalls();
       activeSessions.clear();
       replayGapSequences.clear();
       toolCallListeners.clear();
       toolCancelListeners.clear();
+      activeToolBridges.clear();
       if (reconnectTimer) clearTimeout(reconnectTimer);
       reconnectTimer = null;
       const error = new Error("Agent-runtime bridge disposed");
@@ -410,6 +485,12 @@ export function createAgentRuntimeBridge(
       return () => toolCancelListeners.delete(listener);
     },
   };
+}
+
+function toolCallKey(
+  event: Pick<ToolBridgeCall, "bridgeId" | "callId">,
+): string {
+  return `${event.bridgeId}:${event.callId}`;
 }
 
 export function maybeRegisterAgentRuntimeBridge(
