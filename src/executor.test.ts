@@ -148,6 +148,53 @@ describe("agent runtime executor sequencing", () => {
     await executor.closeAcpSession(first.sessionId);
     sink.sendRuntimeEvent.mockClear();
   });
+
+  it("resumes a host session key without treating it as ACP session/load", async () => {
+    const ensureSession = vi.fn(async (input: { sessionKey: string }) => ({
+      sessionKey: input.sessionKey,
+      backend: "codex",
+    }));
+    const runtime: AcpxRuntimeLike = {
+      ensureSession,
+      startTurn() {
+        return {
+          events: (async function* () {})(),
+          result: Promise.resolve({ status: "completed" }),
+        };
+      },
+      async cancel() {},
+      async close() {},
+    };
+    const first = createAgentRuntimeExecutor({
+      createAcpxRuntime: async () => runtime,
+    });
+    const started = await first.startAcpSession(sink, { agent: "codex" });
+    await first.closeAcpSession(started.sessionId);
+
+    const restarted = createAgentRuntimeExecutor({
+      createAcpxRuntime: async () => runtime,
+    });
+    const resumed = await restarted.startAcpSession(sink, {
+      agent: "codex",
+      resumeSessionId: started.sessionId,
+    });
+
+    expect(resumed.sessionId).toBe(started.sessionId);
+    expect(ensureSession).toHaveBeenCalledTimes(2);
+    expect(ensureSession.mock.calls[0]?.[0]).toMatchObject({
+      sessionKey: started.sessionId,
+    });
+    expect(ensureSession.mock.calls[0]?.[0]).not.toHaveProperty(
+      "resumeSessionId",
+    );
+    expect(ensureSession.mock.calls[1]?.[0]).toMatchObject({
+      sessionKey: started.sessionId,
+    });
+    expect(ensureSession.mock.calls[1]?.[0]).not.toHaveProperty(
+      "resumeSessionId",
+    );
+    await restarted.closeAcpSession(resumed.sessionId);
+  });
 });
 
 describe("agent runtime MCP projection", () => {
@@ -162,6 +209,7 @@ describe("agent runtime MCP projection", () => {
       ]),
     ).toEqual([
       {
+        type: "stdio",
         name: "example",
         command: "example-mcp",
         args: [],

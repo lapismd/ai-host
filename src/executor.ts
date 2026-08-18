@@ -303,7 +303,6 @@ export function createAgentRuntimeExecutor(options?: {
         agent,
         mode: "persistent",
         cwd: effectivePayload.workspace,
-        resumeSessionId: effectivePayload.resumeSessionId,
         sessionOptions: toAcpxSessionOptions(effectivePayload),
       });
       const thinking = toAcpxThinkingValue({
@@ -665,12 +664,14 @@ function withAppToolMcpServer(
 export function toAcpxMcpServers(
   servers: AcpStartPayload["mcpServers"],
 ): Array<{
+  type: "stdio";
   name: string;
   command: string;
   args: string[];
   env: Array<{ name: string; value: string }>;
 }> {
   return (servers ?? []).map((server) => ({
+    type: "stdio" as const,
     name: server.name,
     command: server.command,
     args: server.args ?? [],
