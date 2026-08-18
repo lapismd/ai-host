@@ -238,12 +238,13 @@ export function createAgentRuntimeBridge(
 
   async function ensureConnected(): Promise<void> {
     if (disposed) throw new Error("Agent-runtime bridge is disposed");
-    if (socket?.readyState === WebSocket.OPEN && connectPromise) {
-      await connectPromise;
+    if (socket?.readyState === WebSocket.OPEN) {
+      if (connectPromise) await connectPromise;
       return;
     }
-    connectPromise = new Promise<void>((resolve, reject) => {
-      const next = new WebSocket(options.url);
+    if (!connectPromise) {
+      connectPromise = new Promise<void>((resolve, reject) => {
+        const next = new WebSocket(options.url);
       socket = next;
       const helloId = nextMessageId();
       let finished = false;
@@ -377,8 +378,13 @@ export function createAgentRuntimeBridge(
         connectPromise = null;
         scheduleReconnect();
       });
-    });
+      });
+    }
     await connectPromise;
+    if (disposed) throw new Error("Agent-runtime bridge is disposed");
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      throw new Error("Agent-runtime socket is not open");
+    }
   }
 
   async function invoke<T>(

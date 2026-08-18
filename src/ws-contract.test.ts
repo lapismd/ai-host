@@ -211,6 +211,30 @@ describe("agent-runtime websocket contract", () => {
     }
   });
 
+  it("shares one handshake across concurrent commands on a fresh bridge", async () => {
+    const running = await startHost();
+    const bridge = createAgentRuntimeBridge({
+      url: running.url,
+      token: running.token,
+    });
+    try {
+      const [cursor, codex] = await Promise.all([
+        bridge.invoke("desktop_agent_acp_models", { agent: "cursor" }),
+        bridge.invoke("desktop_agent_acp_models", { agent: "codex" }),
+      ]);
+      expect(cursor).toMatchObject({
+        agent: "cursor",
+        models: ["composer", "composer-fast"],
+      });
+      expect(codex).toMatchObject({
+        agent: "codex",
+        models: ["gpt-test"],
+      });
+    } finally {
+      bridge.dispose();
+    }
+  });
+
   it("runs start, prompt, permission, cancel, and close over the shared protocol", async () => {
     const running = await startHost();
     const bridge = createAgentRuntimeBridge({
