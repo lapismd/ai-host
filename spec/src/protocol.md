@@ -2,13 +2,16 @@
 
 The standalone host speaks the existing agent-runtime WebSocket protocol. The
 CLI owns process bind and token policy. The library MAY generate a token when
-callers omit one and MUST print that token once.
+callers omit one and MUST print that token once. `lapis-ai-host serve-local`
+uses the published fixed token `lapis-ai-host-local` so a browser Settings
+password field can attach without copying a generated secret.
 
 ## Requirements
 
 | ID           | Requirement                                                                                                                                                                                                                                                                                                                                                          |
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AH-CLI-001   | `@lapismd/ai-host` MUST expose `lapis-ai-host serve` with a required token, localhost bind by default, and a workspace root. The CLI MUST NOT serve without a token.                                                                                                                                                                                                  |
+| AH-CLI-002   | `@lapismd/ai-host` MUST expose `lapis-ai-host serve-local` for loopback local testing. The command MUST use the published fixed token, MUST reject `--token`, and MUST reject a non-localhost bind even when `--origin` is present. Production `serve` MUST keep generating a token when one is omitted.                                                              |
 | AH-WS-001    | The host WebSocket MUST require a `hello` handshake with the token before any agent command. A missing hello, a bad token, or a first command MUST close the socket.                                                                                                                                                                                                 |
 | AH-WS-002    | After handshake, the host MUST use the existing `desktop_agent_acp_*` commands and `agent-runtime-event` frames.                                                                                                                                                                                                                                                     |
 | AH-WS-003    | ACP turn iteration and terminal result failures MUST emit one runtime error event. A standalone transport closure MUST reject pending commands, retain active replay cursors while reconnect is possible, and surface a visible interruption only when replay cannot recover the turn.                                                                               |

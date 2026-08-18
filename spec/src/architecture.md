@@ -1,9 +1,11 @@
 # Architecture
 
 The package lives at the repository root and publishes a library, a `./client`
-bridge, and the `lapis-ai-host` and `lapis-mcp-shim` CLIs. It is a
-non-authoritative execution transport: conversations, tool implementations, and
-note content remain in the consuming application.
+bridge, and the `lapis-ai-host` and `lapis-mcp-shim` CLIs. The `serve:local`
+package script starts `lapis-ai-host serve-local` for loopback testing with the
+published fixed token. It is a non-authoritative execution transport:
+conversations, tool implementations, and note content remain in the consuming
+application.
 
 ## Requirements
 

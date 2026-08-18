@@ -22,10 +22,12 @@ export {
   DEFAULT_SERVE_BIND,
   DEFAULT_SERVE_PORT,
   DEFAULT_SERVE_WORKSPACE,
+  LOCAL_TESTING_TOKEN,
   formatCliHelp,
   parseServeArgs,
   type ParsedCli,
   type ServeArgs,
+  type ServeCommand,
 } from "./parse-cli";
 export {
   AGENT_RUNTIME_COMMANDS,

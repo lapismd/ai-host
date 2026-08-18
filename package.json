@@ -17,6 +17,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/bundle-cli.mjs",
+    "serve:local": "tsx src/cli.ts serve-local",
     "check": "pnpm spec:validate && pnpm check:types",
     "check:types": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
