@@ -40,7 +40,7 @@ export default defineConfig(tableRequirements(), {
     specFirst: {
       mode: "mapped",
       canonicalPattern:
-        "^spec/src/(?:index|architecture|protocol|executor|spec-governance)\\.md$",
+        "^spec/src/(?:index|architecture|protocol|executor|file-tools|spec-governance)\\.md$",
       ignore: [
         "(^|/)node_modules/",
         "(^|/)(?:dist|build)/",
@@ -64,6 +64,10 @@ export default defineConfig(tableRequirements(), {
         {
           pattern: "^src/(?:mcp-shim|tool-bridge)\\.ts$",
           chapters: ["spec/src/executor.md"],
+        },
+        {
+          pattern: "^src/file-tools/",
+          chapters: ["spec/src/file-tools.md"],
         },
         {
           pattern: "^(?:package\\.json$|src/index\\.ts$|bin/|scripts/)",

@@ -37,6 +37,11 @@
       "import": "./src/client.ts",
       "default": "./src/client.ts"
     },
+    "./file-tools": {
+      "types": "./dist/file-tools/index.d.ts",
+      "import": "./src/file-tools/index.ts",
+      "default": "./src/file-tools/index.ts"
+    },
     "./package.json": "./package.json"
   },
   "dependencies": {

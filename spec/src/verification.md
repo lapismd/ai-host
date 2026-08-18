@@ -7,8 +7,15 @@
 | AH-GOV-003   | Implemented | `pnpm spec:validate` enforces unique definitions and one verification row per ID. |
 | AH-GOV-004   | Implemented | `docs/HISTORY_MIGRATION.md` records the extraction and audit. |
 | AH-GOV-005   | Implemented | Focused path classification in `spec-validator.config.mjs`. |
-| AH-PKG-001   | Implemented | Root `package.json` names `@lapismd/ai-host` and exposes `build`, `check`, `test`, and `lapis-ai-host`. |
-| AH-PKG-002   | Implemented | `src/mcp-shim.ts` and `src/tool-bridge.ts` own the stdio shim and broker without conversation storage. |
+| AH-PKG-001   | Implemented | Root `package.json` names `@lapismd/ai-host` and exposes `build`, `check`, `test`, `lapis-ai-host`, and `./file-tools`. |
+| AH-PKG-002   | Implemented | `src/mcp-shim.ts` and `src/tool-bridge.ts` own the stdio shim and broker; `src/file-tools` stays algorithm-only. |
+| AH-FT-001    | Implemented | `package.json` publishes `./file-tools`; the leaf and its isolation test import no MCP, acpx, or transport modules. |
+| AH-FT-002    | Implemented | File-tools tests accept `{ path, content }` write plans and leave path checks to the caller. |
+| AH-FT-003    | Implemented | File-tools tests hoist `edits[]`, flat old/new pairs, string aliases, `file_path`, and JSON-string `edits`. |
+| AH-FT-004    | Implemented | File-tools tests cover unique, zero, repeated, overlapping, and no-op edit hunks. |
+| AH-FT-005    | Implemented | File-tools tests parse V4A add, update, delete, and move envelopes and apply update hunks through injected operations. |
+| AH-FT-006    | Implemented | Execute helpers take caller operations and a path resolver; no vault types appear in the leaf. |
+| AH-FT-007    | Implemented | `src/file-tools/NOTICE.md` retains the OpenClaw MIT copyright. |
 | AH-PKG-003   | Implemented | `scripts/serve-local.test.ts` seeds or reuses `.env` `LAPIS_AGENT_RUNTIME_TOKEN` and starts `serve`; `src/parse-cli.test.ts` still accepts only `serve`. |
 | AH-CLI-001   | Implemented | `src/parse-cli.test.ts` and `src/serve.ts` require a token and default to localhost. |
 | AH-WS-001    | Implemented | `src/handshake.test.ts` rejects missing hello, a bad token, and a first command. |
