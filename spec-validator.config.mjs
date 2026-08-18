@@ -58,7 +58,7 @@ export default defineConfig(tableRequirements(), {
           chapters: ["spec/src/protocol.md"],
         },
         {
-          pattern: "^src/(?:executor|acp-agent|acp-session-options)\\.ts$",
+          pattern: "^src/(?:executor|acp-agent|acp-session-options|acp-model-catalog)\\.ts$",
           chapters: ["spec/src/executor.md"],
         },
         {

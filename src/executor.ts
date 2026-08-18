@@ -12,6 +12,10 @@ import {
   type AcpxSessionOptions,
 } from "./acp-session-options";
 import {
+  catalogEntriesForAgent,
+  type AcpModelEntry,
+} from "./acp-model-catalog";
+import {
   ToolBridgeBroker,
   type ToolBridgeBrokerOptions,
   type ToolBridgeCall,
@@ -71,7 +75,10 @@ export type AcpModelCatalog = {
   agent: string;
   currentModel?: string;
   models: string[];
+  entries: AcpModelEntry[];
 };
+
+export type { AcpModelEntry } from "./acp-model-catalog";
 
 type AcpRuntimeHandle = {
   sessionKey: string;
@@ -366,7 +373,7 @@ export function createAgentRuntimeExecutor(options?: {
       });
       try {
         if (!runtime.getStatus) {
-          return { agent, models: [] };
+          return { agent, models: [], entries: [] };
         }
         const status = await runtime.getStatus({ handle });
         const currentModel = status.models?.currentModelId?.trim() || undefined;
@@ -377,7 +384,12 @@ export function createAgentRuntimeExecutor(options?: {
               .filter(Boolean),
           ),
         ];
-        return { agent, currentModel, models };
+        return {
+          agent,
+          currentModel,
+          models,
+          entries: catalogEntriesForAgent(agent, models),
+        };
       } finally {
         await closeDisposableAcpSession(runtime, handle);
       }

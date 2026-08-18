@@ -19,7 +19,7 @@ MUST update the mapped chapter in the same Jujutsu change.
 | -------------- | ---------------- |
 | `src/serve.ts`, `src/parse-cli.ts`, `src/cli.ts`, `src/token.ts` | `protocol.md` |
 | `src/ws-server.ts`, `src/protocol.ts`, `src/replay-buffer.ts`, `src/client.ts` | `protocol.md` |
-| `src/executor.ts`, `src/acp-agent.ts`, `src/acp-session-options.ts` | `executor.md` |
+| `src/executor.ts`, `src/acp-agent.ts`, `src/acp-session-options.ts`, `src/acp-model-catalog.ts` | `executor.md` |
 | `src/mcp-shim.ts`, `src/tool-bridge.ts` | `executor.md` |
 | `src/file-tools/` | `file-tools.md` |
 | `package.json`, `src/index.ts`, `bin/`, `scripts/` | `architecture.md` |

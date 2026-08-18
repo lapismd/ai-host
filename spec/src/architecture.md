@@ -2,7 +2,8 @@
 
 The package lives at the repository root and publishes a library, a `./client`
 bridge, a vault-free `./file-tools` kernel, and the `lapis-ai-host` and
-`lapis-mcp-shim` CLIs. The development-only `serve:local` package script seeds
+`lapis-mcp-shim` CLIs. Disposable ACP model discovery returns raw ids plus
+structured labels and badges for consumers. The development-only `serve:local` package script seeds
 an ignored `.env` `LAPIS_AGENT_RUNTIME_TOKEN` when missing, then starts the
 existing `serve` command with that token. It is a non-authoritative execution
 transport: conversations, tool authority, and note content remain in the

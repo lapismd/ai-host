@@ -11,6 +11,7 @@ export {
   normalizePermissionDecision,
   type AcpPermissionDecision,
   type AcpModelCatalog,
+  type AcpModelEntry,
   type AcpStartPayload,
   type AgentHostSink,
   type AgentRuntimeInputSink,

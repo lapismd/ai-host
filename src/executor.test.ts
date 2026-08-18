@@ -97,6 +97,10 @@ describe("agent runtime executor ACP model catalogs", () => {
       agent: "cursor",
       currentModel: "composer-2.5",
       models: ["composer-2.5", "composer-2.5-fast"],
+      entries: [
+        { id: "composer-2.5", label: "composer-2.5" },
+        { id: "composer-2.5-fast", label: "composer-2.5-fast" },
+      ],
     });
     expect(close).toHaveBeenNthCalledWith(1, {
       handle: expect.any(Object),

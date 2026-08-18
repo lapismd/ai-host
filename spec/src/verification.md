@@ -26,4 +26,5 @@
 | AH-ACP-001   | Implemented | `src/acp-session-options.test.ts` and executor tests keep sessions usable when thinking is unadvertised. |
 | AH-ACP-002   | Implemented | Executor tests preserve a successful catalog when backend `session/close` is unsupported. |
 | AH-ACP-003   | Implemented | `src/acp-agent.ts` and `src/acp-session-options.ts` pass agent, model, and capability-aware thinking to acpx. |
+| AH-ACP-004   | Implemented | `src/acp-model-catalog.test.ts` and executor catalog tests return ids plus Cursor label and badges. |
 | AH-MCP-001   | Implemented | `src/tool-bridge.test.ts` covers v3 bridge messages, reserved `lapis-tools`, token authorization, and disconnect cancellation. |
