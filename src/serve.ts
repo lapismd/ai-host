@@ -43,11 +43,7 @@ export async function serveAgentHost(
   const url = `ws://${args.bind}:${server.port}`;
   const print = options?.print ?? console.log;
   print(`lapis-ai-host listening on ${url}`);
-  if (args.command === "serve-local") {
-    print(`token: ${token} (fixed local-testing token)`);
-  } else {
-    print(`token: ${token}`);
-  }
+  print(`token: ${token}`);
 
   return {
     token,

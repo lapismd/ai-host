@@ -1,5 +1,6 @@
 node_modules/
 dist/
+.env
 spec/book/
 .qmd/index.sqlite*
 coverage/
