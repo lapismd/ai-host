@@ -52,5 +52,5 @@ repository as `AH-*` IDs after the extract.
 - `git log --follow -- src/index.ts`: retains the host implementation lineage
 - `.git/filter-repo/commit-map`: retained locally for the complete mapping
 
-The source package must not be removed from Lapis until the standalone package,
-history audit, and consumer cutover are verified.
+Lapis consumer cutover is complete: `packages/ai-host` was removed and hosts
+link `@lapismd/ai-host` from this sibling repository.
