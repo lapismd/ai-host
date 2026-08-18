@@ -1,0 +1,10 @@
+[book]
+title = "AI Host Specification"
+authors = ["LapisMD contributors"]
+description = "Canonical requirements and verification evidence for @lapismd/ai-host."
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+create-missing = false

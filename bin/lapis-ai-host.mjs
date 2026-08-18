@@ -8,7 +8,7 @@ const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const cli = join(packageRoot, "dist/cli.js");
 if (!existsSync(cli)) {
   console.error(
-    "lapis-ai-host: build the package first (`pnpm --filter @lapis-notes/ai-host build`).",
+    "lapis-ai-host: build the package first (`pnpm build`).",
   );
   process.exit(1);
 }

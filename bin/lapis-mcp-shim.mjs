@@ -8,7 +8,7 @@ const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const shim = join(packageRoot, "dist/mcp-shim.js");
 if (!existsSync(shim)) {
   console.error(
-    "lapis-mcp-shim: build the package first (`pnpm --filter @lapis-notes/ai-host build`).",
+    "lapis-mcp-shim: build the package first (`pnpm build`).",
   );
   process.exit(1);
 }

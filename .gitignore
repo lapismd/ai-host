@@ -1,0 +1,12 @@
+node_modules/
+dist/
+spec/book/
+.qmd/index.sqlite*
+coverage/
+test-results/
+*.tsbuildinfo
+*.log
+.DS_Store
+tmp/
+AGENTS.override.md
+.cursor/
