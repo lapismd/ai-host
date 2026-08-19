@@ -38,6 +38,39 @@ describe("toAcpxSessionOptions", () => {
   it("returns an empty object when neither field is set", () => {
     expect(toAcpxSessionOptions({})).toEqual({});
   });
+
+  it("appends a path-free available_skills manifest", () => {
+    const manifest = [
+      "<available_skills>",
+      "  <skill><name>research-notes</name></skill>",
+      "</available_skills>",
+    ].join("\n");
+    expect(
+      toAcpxSessionOptions({
+        model: { provider: "codex", model: "gpt-5.4-medium" },
+        metadata: { availableSkillsManifest: manifest },
+      }),
+    ).toEqual({
+      model: "gpt-5.4-medium",
+      systemPrompt: { append: manifest },
+    });
+  });
+
+  it("omits path-bearing or non-manifest metadata", () => {
+    expect(
+      toAcpxSessionOptions({
+        metadata: {
+          availableSkillsManifest:
+            "<available_skills>Notes/.lapis/skills/research-notes</available_skills>",
+        },
+      }),
+    ).toEqual({});
+    expect(
+      toAcpxSessionOptions({
+        metadata: { availableSkillsManifest: "just a note" },
+      }),
+    ).toEqual({});
+  });
 });
 
 describe("toAcpxThinkingValue", () => {
