@@ -12,6 +12,7 @@ export {
   type AcpPermissionDecision,
   type AcpModelCatalog,
   type AcpModelEntry,
+  type AcpMcpServer,
   type AcpStartPayload,
   type AgentHostSink,
   type AgentRuntimeInputSink,
@@ -58,6 +59,7 @@ export {
   type ToolBridgeDescriptor,
   type ToolBridgeOpenPayload,
   type ToolBridgeResponse,
+  type ToolBridgeHttpContribution,
   type ToolBridgeServerContribution,
   type ToolBridgeSink,
 } from "./tool-bridge";

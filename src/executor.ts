@@ -52,15 +52,25 @@ export type AcpStartPayload = {
   model?: { provider?: string; model?: string };
   thinking?: "off" | "low" | "medium" | "high";
   metadata?: Record<string, unknown>;
-  mcpServers?: Array<{
-    name: string;
-    command: string;
-    args?: string[];
-    env?: Record<string, string>;
-  }>;
+  mcpServers?: AcpMcpServer[];
   resumeSessionId?: string;
   appToolBridgeId?: string;
 };
+
+export type AcpMcpServer =
+  | {
+      name: string;
+      command: string;
+      args?: string[];
+      env?: Record<string, string>;
+      type?: "stdio";
+    }
+  | {
+      name: string;
+      type: "http" | "sse";
+      url: string;
+      headers?: Array<{ name: string; value: string }>;
+    };
 
 export type AcpPermissionDecision = {
   outcome:
@@ -651,10 +661,11 @@ function withAppToolMcpServer(
     throw new Error("MCP server name is reserved: lapis-tools");
   }
   if (!payload.appToolBridgeId) return payload;
-  const appServer = broker.serverContribution(
-    requiredConnectionId(sink),
-    payload.appToolBridgeId,
-  );
+  const connectionId = requiredConnectionId(sink);
+  const appServer =
+    resolveAcpAgent(payload) === "cursor"
+      ? broker.httpServerContribution(connectionId, payload.appToolBridgeId)
+      : broker.serverContribution(connectionId, payload.appToolBridgeId);
   return {
     ...payload,
     mcpServers: [...(payload.mcpServers ?? []), appServer],
@@ -663,23 +674,46 @@ function withAppToolMcpServer(
 
 export function toAcpxMcpServers(
   servers: AcpStartPayload["mcpServers"],
-): Array<{
-  type: "stdio";
-  name: string;
-  command: string;
-  args: string[];
-  env: Array<{ name: string; value: string }>;
-}> {
-  return (servers ?? []).map((server) => ({
-    type: "stdio" as const,
-    name: server.name,
-    command: server.command,
-    args: server.args ?? [],
-    env: Object.entries(server.env ?? {}).map(([name, value]) => ({
-      name,
-      value,
-    })),
-  }));
+): Array<
+  | {
+      type: "stdio";
+      name: string;
+      command: string;
+      args: string[];
+      env: Array<{ name: string; value: string }>;
+    }
+  | {
+      type: "http" | "sse";
+      name: string;
+      url: string;
+      headers: Array<{ name: string; value: string }>;
+    }
+> {
+  return (servers ?? []).map((server) =>
+    isHttpMcpServer(server)
+      ? {
+          type: server.type,
+          name: server.name,
+          url: server.url,
+          headers: [...(server.headers ?? [])],
+        }
+      : {
+          type: "stdio" as const,
+          name: server.name,
+          command: server.command,
+          args: server.args ?? [],
+          env: Object.entries(server.env ?? {}).map(([name, value]) => ({
+            name,
+            value,
+          })),
+        },
+  );
+}
+
+function isHttpMcpServer(
+  server: AcpMcpServer,
+): server is Extract<AcpMcpServer, { type: "http" | "sse" }> {
+  return server.type === "http" || server.type === "sse";
 }
 
 function nativeProcessArgs(

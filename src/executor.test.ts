@@ -3,6 +3,7 @@ import {
   createAgentRuntimeExecutor,
   toAcpxMcpServers,
   type AcpxRuntimeLike,
+  type CreateAcpxRuntime,
 } from "./executor";
 
 const sink = {
@@ -219,6 +220,120 @@ describe("agent runtime MCP projection", () => {
         ],
       },
     ]);
+  });
+
+  it("preserves HTTP MCP servers for agents that skip stdio", () => {
+    expect(
+      toAcpxMcpServers([
+        {
+          type: "http",
+          name: "lapis-tools",
+          url: "http://127.0.0.1:9/mcp/bridge",
+          headers: [{ name: "Authorization", value: "Bearer secret" }],
+        },
+      ]),
+    ).toEqual([
+      {
+        type: "http",
+        name: "lapis-tools",
+        url: "http://127.0.0.1:9/mcp/bridge",
+        headers: [{ name: "Authorization", value: "Bearer secret" }],
+      },
+    ]);
+  });
+
+  it("projects Cursor lapis-tools as Streamable HTTP MCP", async () => {
+    let projected: Parameters<CreateAcpxRuntime>[2]["mcpServers"];
+    const fake = createRuntime(["mode", "model"]);
+    const executor = createAgentRuntimeExecutor({
+      createAcpxRuntime: async (_sink, _sessionId, payload) => {
+        projected = payload.mcpServers;
+        return fake.runtime;
+      },
+    });
+    const toolSink = {
+      connectionId: "renderer-1",
+      sendRuntimeEvent: vi.fn(),
+      sendProcessMessage: vi.fn(),
+      sendToolCall: vi.fn(),
+      sendToolCancel: vi.fn(),
+    };
+    const opened = await executor.openToolBridge(toolSink, {
+      bindingId: "binding-1",
+      conversationId: "conversation-1",
+      descriptors: [
+        {
+          name: "notes_search",
+          description: "Search notes",
+          inputSchema: { type: "object" },
+          effect: "read",
+        },
+      ],
+    });
+    await executor.startAcpSession(toolSink, {
+      agent: "cursor",
+      appToolBridgeId: opened.bridgeId,
+    });
+    expect(projected).toEqual([
+      expect.objectContaining({
+        type: "http",
+        name: "lapis-tools",
+        url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/mcp\//u),
+        headers: [
+          expect.objectContaining({
+            name: "Authorization",
+            value: expect.stringMatching(/^Bearer /u),
+          }),
+        ],
+      }),
+    ]);
+    await executor.close();
+  });
+
+  it("keeps stdio lapis-tools for Codex ACP", async () => {
+    let projected: Parameters<CreateAcpxRuntime>[2]["mcpServers"];
+    const fake = createRuntime(["mode", "model"]);
+    const executor = createAgentRuntimeExecutor({
+      createAcpxRuntime: async (_sink, _sessionId, payload) => {
+        projected = payload.mcpServers;
+        return fake.runtime;
+      },
+    });
+    const toolSink = {
+      connectionId: "renderer-1",
+      sendRuntimeEvent: vi.fn(),
+      sendProcessMessage: vi.fn(),
+      sendToolCall: vi.fn(),
+      sendToolCancel: vi.fn(),
+    };
+    const opened = await executor.openToolBridge(toolSink, {
+      bindingId: "binding-1",
+      conversationId: "conversation-1",
+      descriptors: [
+        {
+          name: "notes_search",
+          description: "Search notes",
+          inputSchema: { type: "object" },
+          effect: "read",
+        },
+      ],
+    });
+    await executor.startAcpSession(toolSink, {
+      agent: "codex",
+      appToolBridgeId: opened.bridgeId,
+    });
+    expect(projected).toEqual([
+      expect.objectContaining({
+        name: "lapis-tools",
+        command: expect.any(String),
+        args: expect.any(Array),
+        env: expect.objectContaining({
+          LAPIS_TOOL_BRIDGE_URL: expect.stringMatching(/^ws:\/\/127\.0\.0\.1:/u),
+        }),
+      }),
+    ]);
+    expect(projected?.[0]).not.toHaveProperty("type", "http");
+    await executor.close();
   });
 
   it("rejects the reserved lapis-tools server name", async () => {

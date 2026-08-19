@@ -8,7 +8,7 @@
 | AH-GOV-004   | Implemented | `docs/HISTORY_MIGRATION.md` records the extraction and audit. |
 | AH-GOV-005   | Implemented | Focused path classification in `spec-validator.config.mjs`. |
 | AH-PKG-001   | Implemented | Root `package.json` names `@lapismd/ai-host` and exposes `build`, `check`, `test`, `lapis-ai-host`, and `./file-tools`. |
-| AH-PKG-002   | Implemented | `src/mcp-shim.ts` and `src/tool-bridge.ts` own the stdio shim and broker; `src/file-tools` stays algorithm-only. |
+| AH-PKG-002   | Implemented | `src/mcp-shim.ts` and `src/tool-bridge.ts` own the stdio shim, Streamable HTTP MCP, and broker; `src/file-tools` stays algorithm-only. |
 | AH-FT-001    | Implemented | `package.json` publishes `./file-tools`; the leaf and its isolation test import no MCP, acpx, or transport modules. |
 | AH-FT-002    | Implemented | File-tools tests accept `{ path, content }` write plans and leave path checks to the caller. |
 | AH-FT-003    | Implemented | File-tools tests hoist `edits[]`, flat old/new pairs, string aliases, `file_path`, and JSON-string `edits`. |
@@ -32,3 +32,4 @@
 | AH-ACP-007   | Implemented | Session-option tests append path-free sessionBootstrap with the skills manifest and omit path-bearing bootstrap text. |
 | AH-MCP-001   | Implemented | `src/tool-bridge.test.ts` covers v3 bridge messages, reserved `lapis-tools`, token authorization, and disconnect cancellation. |
 | AH-MCP-002   | Implemented | `src/executor.test.ts` projects MCP servers with `type: stdio` and required stdio fields. |
+| AH-MCP-003   | Implemented | Executor tests project Cursor `lapis-tools` as `type: http` with loopback URL and bearer headers; tool-bridge tests list and call through Streamable HTTP. |

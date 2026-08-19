@@ -1,6 +1,13 @@
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { existsSync } from "node:fs";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import path from "node:path";
+import { Server as McpServer } from "@modelcontextprotocol/sdk/server/index.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
 import { WebSocketServer, type WebSocket } from "ws";
 
 const MAX_PENDING_CALLS = 128;
@@ -54,6 +61,23 @@ export type ToolBridgeServerContribution = {
   env: Record<string, string>;
 };
 
+export type ToolBridgeHttpContribution = {
+  type: "http";
+  name: "lapis-tools";
+  url: string;
+  headers: Array<{ name: string; value: string }>;
+};
+
+type PendingCall =
+  | { kind: "socket"; socket: WebSocket }
+  | {
+      kind: "local";
+      resolve(value: {
+        result?: unknown;
+        error?: { code: string; message: string };
+      }): void;
+    };
+
 type BridgeRecord = {
   id: string;
   token: string;
@@ -63,7 +87,7 @@ type BridgeRecord = {
   descriptors: ToolBridgeDescriptor[];
   sink: ToolBridgeSink;
   sockets: Set<WebSocket>;
-  pending: Map<string, WebSocket>;
+  pending: Map<string, PendingCall>;
 };
 
 export type ToolBridgeBrokerOptions = {
@@ -79,7 +103,8 @@ export class ToolBridgeBroker {
   readonly #nodeCommand: string;
   readonly #shimArgsPrefix: string[];
   readonly #extraEnv: Record<string, string>;
-  #server: WebSocketServer | null = null;
+  #http: Server | null = null;
+  #wss: WebSocketServer | null = null;
   #listeningPromise: Promise<void> | null = null;
   #port = 0;
 
@@ -131,11 +156,33 @@ export class ToolBridgeBroker {
     };
   }
 
+  httpServerContribution(
+    connectionId: string,
+    bridgeId: string,
+  ): ToolBridgeHttpContribution {
+    const bridge = this.#requireOwned(connectionId, bridgeId);
+    return {
+      type: "http",
+      name: "lapis-tools",
+      url: `http://127.0.0.1:${this.#port}/mcp/${bridge.id}`,
+      headers: [
+        { name: "Authorization", value: `Bearer ${bridge.token}` },
+      ],
+    };
+  }
+
   respond(connectionId: string, response: ToolBridgeResponse): void {
     const bridge = this.#requireOwned(connectionId, response.bridgeId);
-    const socket = bridge.pending.get(response.callId);
-    if (!socket) throw new Error("Unknown or completed app tool call");
+    const pending = bridge.pending.get(response.callId);
+    if (!pending) throw new Error("Unknown or completed app tool call");
     bridge.pending.delete(response.callId);
+    if (pending.kind === "local") {
+      pending.resolve({
+        result: response.result,
+        error: response.error,
+      });
+      return;
+    }
     const frame = {
       type: "result",
       id: response.callId,
@@ -143,14 +190,14 @@ export class ToolBridgeBroker {
       error: response.error,
     };
     if (jsonBytes(frame) > MAX_RESULT_BYTES) {
-      sendJson(socket, {
+      sendJson(pending.socket, {
         type: "result",
         id: response.callId,
         error: { code: "result_too_large", message: "Tool result is too large" },
       });
       return;
     }
-    sendJson(socket, frame);
+    sendJson(pending.socket, frame);
   }
 
   closeBridge(connectionId: string, bridgeId: string): void {
@@ -170,24 +217,36 @@ export class ToolBridgeBroker {
 
   async close(): Promise<void> {
     for (const bridge of [...this.#bridges.values()]) this.#closeRecord(bridge);
-    const server = this.#server;
-    this.#server = null;
+    const wss = this.#wss;
+    const http = this.#http;
+    this.#wss = null;
+    this.#http = null;
     this.#listeningPromise = null;
     this.#port = 0;
-    if (!server) return;
-    await new Promise<void>((resolve, reject) => {
-      server.close((error) => (error ? reject(error) : resolve()));
-    });
+    if (wss) {
+      await new Promise<void>((resolve, reject) => {
+        wss.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+    if (http) {
+      await new Promise<void>((resolve, reject) => {
+        http.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
   }
 
   async #ensureListening(): Promise<void> {
     if (this.#listeningPromise) return this.#listeningPromise;
-    const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
-    this.#server = server;
-    server.on("connection", (socket) => this.#bindSocket(socket));
+    const http = createServer((req, res) => {
+      void this.#handleMcpHttp(req, res);
+    });
+    const wss = new WebSocketServer({ server: http });
+    this.#http = http;
+    this.#wss = wss;
+    wss.on("connection", (socket) => this.#bindSocket(socket));
     this.#listeningPromise = new Promise<void>((resolve, reject) => {
-      server.once("listening", () => {
-        const address = server.address();
+      http.once("listening", () => {
+        const address = http.address();
         if (!address || typeof address === "string") {
           reject(new Error("Tool bridge did not bind a loopback port"));
           return;
@@ -195,12 +254,14 @@ export class ToolBridgeBroker {
         this.#port = address.port;
         resolve();
       });
-      server.once("error", reject);
+      http.once("error", reject);
     });
+    http.listen(0, "127.0.0.1");
     try {
       await this.#listeningPromise;
     } catch (error) {
-      this.#server = null;
+      this.#http = null;
+      this.#wss = null;
       this.#listeningPromise = null;
       throw error;
     }
@@ -239,8 +300,8 @@ export class ToolBridgeBroker {
       clearTimeout(helloTimer);
       if (!bridge) return;
       bridge.sockets.delete(socket);
-      for (const [callId, pendingSocket] of bridge.pending) {
-        if (pendingSocket !== socket) continue;
+      for (const [callId, pending] of bridge.pending) {
+        if (pending.kind !== "socket" || pending.socket !== socket) continue;
         bridge.pending.delete(callId);
         bridge.sink.sendToolCancel({
           bridgeId: bridge.id,
@@ -262,7 +323,9 @@ export class ToolBridgeBroker {
       return;
     }
     if (message.type === "cancel" && typeof message.id === "string") {
-      if (bridge.pending.delete(message.id)) {
+      const pending = bridge.pending.get(message.id);
+      if (pending?.kind === "socket") {
+        bridge.pending.delete(message.id);
         bridge.sink.sendToolCancel({
           bridgeId: bridge.id,
           bindingId: bridge.bindingId,
@@ -290,7 +353,7 @@ export class ToolBridgeBroker {
       });
       return;
     }
-    bridge.pending.set(message.id, socket);
+    bridge.pending.set(message.id, { kind: "socket", socket });
     bridge.sink.sendToolCall({
       bridgeId: bridge.id,
       bindingId: bridge.bindingId,
@@ -308,9 +371,100 @@ export class ToolBridgeBroker {
     return bridge;
   }
 
+  async #handleMcpHttp(
+    req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> {
+    const pathname = new URL(req.url ?? "", "http://127.0.0.1").pathname;
+    const match = /^\/mcp\/([^/]+)$/u.exec(pathname);
+    if (!match) {
+      res.writeHead(404).end();
+      return;
+    }
+    const token = bearerToken(req.headers.authorization);
+    const bridge = this.#bridges.get(match[1] ?? "");
+    if (!bridge || !token || !tokensEqual(bridge.token, token)) {
+      res.writeHead(401).end();
+      return;
+    }
+    const server = createLapisMcpServer(bridge.descriptors, (name, input, signal) =>
+      this.#invokeLocal(bridge, name, input, signal),
+    );
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+    });
+    await server.connect(transport);
+    try {
+      await transport.handleRequest(req, res);
+    } finally {
+      await transport.close().catch(() => undefined);
+      await server.close().catch(() => undefined);
+    }
+  }
+
+  async #invokeLocal(
+    bridge: BridgeRecord,
+    name: string,
+    input: unknown,
+    signal: AbortSignal,
+  ): Promise<unknown> {
+    if (signal.aborted) throw new Error("Tool call cancelled");
+    if (
+      bridge.pending.size >= MAX_PENDING_CALLS ||
+      !bridge.descriptors.some((descriptor) => descriptor.name === name)
+    ) {
+      return {
+        content: [{ type: "text", text: "Tool call rejected" }],
+        isError: true,
+      };
+    }
+    const callId = randomUUID();
+    const settled = await new Promise<{
+      result?: unknown;
+      error?: { code: string; message: string };
+    }>((resolve, reject) => {
+      const onAbort = () => {
+        if (!bridge.pending.delete(callId)) return;
+        bridge.sink.sendToolCancel({
+          bridgeId: bridge.id,
+          bindingId: bridge.bindingId,
+          callId,
+        });
+        reject(new Error("Tool call cancelled"));
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+      bridge.pending.set(callId, {
+        kind: "local",
+        resolve(value) {
+          signal.removeEventListener("abort", onAbort);
+          resolve(value);
+        },
+      });
+      bridge.sink.sendToolCall({
+        bridgeId: bridge.id,
+        bindingId: bridge.bindingId,
+        callId,
+        name,
+        input,
+      });
+    });
+    if (settled.error) {
+      return {
+        content: [{ type: "text", text: settled.error.message }],
+        isError: true,
+      };
+    }
+    return toMcpToolResult(settled.result);
+  }
+
   #closeRecord(bridge: BridgeRecord): void {
     this.#bridges.delete(bridge.id);
-    for (const callId of bridge.pending.keys()) {
+    for (const [callId, pending] of bridge.pending) {
+      if (pending.kind === "local") {
+        pending.resolve({
+          error: { code: "cancelled", message: "Tool bridge closed" },
+        });
+      }
       bridge.sink.sendToolCancel({
         bridgeId: bridge.id,
         bindingId: bridge.bindingId,
@@ -374,6 +528,62 @@ function tokensEqual(left: string, right: string): boolean {
   return (
     leftBytes.length === rightBytes.length && timingSafeEqual(leftBytes, rightBytes)
   );
+}
+
+function bearerToken(header: string | string[] | undefined): string {
+  const value = Array.isArray(header) ? header[0] : header;
+  const match = /^Bearer\s+(\S+)$/iu.exec(value?.trim() ?? "");
+  return match?.[1] ?? "";
+}
+
+function createLapisMcpServer(
+  descriptors: ToolBridgeDescriptor[],
+  invoke: (
+    name: string,
+    input: unknown,
+    signal: AbortSignal,
+  ) => Promise<unknown>,
+): McpServer {
+  const server = new McpServer(
+    { name: "lapis-tools", version: "1.0.0" },
+    { capabilities: { tools: {} } },
+  );
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: descriptors.map((descriptor) => ({
+      name: descriptor.name,
+      description: descriptor.description,
+      inputSchema: descriptor.inputSchema,
+      outputSchema: descriptor.outputSchema,
+      annotations: {
+        readOnlyHint: descriptor.effect === "read",
+        destructiveHint: descriptor.effect === "write",
+        openWorldHint: descriptor.effect === "external",
+      },
+    })),
+  }));
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+    return toMcpToolResult(
+      await invoke(
+        request.params.name,
+        request.params.arguments ?? {},
+        extra.signal,
+      ),
+    ) as never;
+  });
+  return server;
+}
+
+function toMcpToolResult(value: unknown): unknown {
+  if (!isRecord(value) || value.structuredContent === undefined) return value;
+  if (isRecord(value.structuredContent)) return value;
+  return {
+    ...value,
+    structuredContent: { value: value.structuredContent },
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function defaultShimPath(): string {

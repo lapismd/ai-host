@@ -1,7 +1,9 @@
 # Executor
 
 The executor adapts acpx, applies advertised session capabilities, and hosts
-the application-tool MCP shim. It keeps acpx types inside this package.
+the application-tool MCP shim. Cursor ACP advertises only HTTP and SSE MCP, so
+the broker also exposes Streamable HTTP `lapis-tools`. It keeps acpx types
+inside this package.
 
 ## Requirements
 
@@ -16,3 +18,4 @@ the application-tool MCP shim. It keeps acpx types inside this package.
 | AH-ACP-007 | When ACP start metadata includes a path-free `sessionBootstrap` string, the host MUST append it with the skills manifest. A path-bearing bootstrap MUST be omitted. The host MUST NOT persist that text. |
 | AH-MCP-001 | Protocol v3 MUST add authenticated application-tool bridge open, response, close, call, and cancellation messages while preserving protocol-v2 agent fallback without tools. The host MUST expose tools through an official-SDK stdio MCP shim backed by a token-authenticated ephemeral `127.0.0.1` broker, reserve `lapis-tools`, keep credentials out of arguments and durable state, and cancel in-flight calls when the owning connection closes. |
 | AH-MCP-002 | ACP stdio MCP projections MUST include `type: stdio` plus required `name`, `command`, `args`, and `env`. Agents that skip invalid MCP items MUST still receive `lapis-tools`. |
+| AH-MCP-003 | Cursor ACP sessions MUST receive `lapis-tools` as official-SDK Streamable HTTP MCP with `type: http`, a `127.0.0.1` URL, and bearer headers. Other ACP agents MUST keep the stdio projection. The host MUST NOT persist those credentials. |
