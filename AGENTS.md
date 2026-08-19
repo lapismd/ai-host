@@ -50,7 +50,8 @@ specification change is accepted.
 3. Update the specification and verification map before implementation.
 4. Add focused regression evidence for the changed boundary.
 5. Run `pnpm spec:check`, `pnpm check`, `pnpm test`, and `pnpm build`.
-6. Commit the verified slice with Jujutsu.
+6. Commit the verified slice with Jujutsu. This is a standing request; do not
+   wait for the user to ask.
 
 Generated `spec/book/` output is ignored and non-normative. Do not rewrite the
 filtered source history after the retained migration audit has been recorded.
