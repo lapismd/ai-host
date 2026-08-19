@@ -29,5 +29,6 @@
 | AH-ACP-004   | Implemented | `src/acp-model-catalog.test.ts` and executor catalog tests return ids plus Cursor label and badges. |
 | AH-ACP-005   | Implemented | Executor restart-resume test reuses the host id as sessionKey and omits acpx resumeSessionId. |
 | AH-ACP-006   | Implemented | Session-option tests append a path-free available_skills manifest and omit path-bearing metadata. |
+| AH-ACP-007   | Implemented | Session-option tests append path-free sessionBootstrap with the skills manifest and omit path-bearing bootstrap text. |
 | AH-MCP-001   | Implemented | `src/tool-bridge.test.ts` covers v3 bridge messages, reserved `lapis-tools`, token authorization, and disconnect cancellation. |
 | AH-MCP-002   | Implemented | `src/executor.test.ts` projects MCP servers with `type: stdio` and required stdio fields. |

@@ -14,9 +14,23 @@ export function toAcpxSessionOptions(
 ): AcpxSessionOptions {
   const options: AcpxSessionOptions = {};
   if (payload.model?.model) options.model = payload.model.model;
-  const manifest = portableAvailableSkillsManifest(payload.metadata);
-  if (manifest) options.systemPrompt = { append: manifest };
+  const parts = [
+    portableSessionBootstrap(payload.metadata),
+    portableAvailableSkillsManifest(payload.metadata),
+  ].filter((part): part is string => Boolean(part));
+  if (parts.length > 0) options.systemPrompt = { append: parts.join("\n\n") };
   return options;
+}
+
+export function portableSessionBootstrap(
+  metadata?: Record<string, unknown>,
+): string | undefined {
+  const value = metadata?.sessionBootstrap;
+  if (typeof value !== "string") return undefined;
+  const bootstrap = value.trim();
+  if (!bootstrap.includes("<lapis_context>")) return undefined;
+  if (hasHostFilesystemPath(bootstrap)) return undefined;
+  return bootstrap;
 }
 
 export function portableAvailableSkillsManifest(
@@ -31,7 +45,7 @@ export function portableAvailableSkillsManifest(
 }
 
 function hasHostFilesystemPath(value: string): boolean {
-  return /(?:(?:^|[\s"'>=])(?:\/|[A-Za-z]:\\|file:\/\/)|\.lapis\/skills\/)/u.test(
+  return /(?:(?:^|[\s"'>=])(?:\/|[A-Za-z]:\\|file:\/\/)|\.lapis\/skills\/|\.agents\/(?:user\/)?skills\/)/u.test(
     value,
   );
 }

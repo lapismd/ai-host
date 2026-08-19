@@ -56,12 +56,46 @@ describe("toAcpxSessionOptions", () => {
     });
   });
 
+  it("appends path-free sessionBootstrap with the skills manifest", () => {
+    const bootstrap = [
+      "<lapis_context>",
+      "Use application tools for notes.",
+      "</lapis_context>",
+    ].join("\n");
+    const manifest = [
+      "<available_skills>",
+      "  <skill><name>research-notes</name></skill>",
+      "</available_skills>",
+    ].join("\n");
+    expect(
+      toAcpxSessionOptions({
+        metadata: {
+          sessionBootstrap: bootstrap,
+          availableSkillsManifest: manifest,
+        },
+      }),
+    ).toEqual({
+      systemPrompt: { append: `${bootstrap}\n\n${manifest}` },
+    });
+  });
+
+  it("omits path-bearing bootstrap text", () => {
+    expect(
+      toAcpxSessionOptions({
+        metadata: {
+          sessionBootstrap:
+            "<lapis_context>/Users/steve/vault</lapis_context>",
+        },
+      }),
+    ).toEqual({});
+  });
+
   it("omits path-bearing or non-manifest metadata", () => {
     expect(
       toAcpxSessionOptions({
         metadata: {
           availableSkillsManifest:
-            "<available_skills>Notes/.lapis/skills/research-notes</available_skills>",
+            "<available_skills>Notes/.agents/skills/research-notes</available_skills>",
         },
       }),
     ).toEqual({});
