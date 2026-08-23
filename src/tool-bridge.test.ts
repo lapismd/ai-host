@@ -4,8 +4,25 @@ import {
   getDefaultEnvironment,
   StdioClientTransport,
 } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { createServer } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ToolBridgeBroker, type ToolBridgeCall } from "./tool-bridge";
+
+async function unusedLoopbackPort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Test server did not bind a loopback port");
+  }
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
+  return address.port;
+}
 
 describe("app tool stdio bridge", () => {
   let broker: ToolBridgeBroker | undefined;
@@ -16,6 +33,30 @@ describe("app tool stdio bridge", () => {
     await broker?.close();
     client = undefined;
     broker = undefined;
+  });
+
+  it("advertises an owner-selected loopback port", async () => {
+    const listenPort = await unusedLoopbackPort();
+    broker = new ToolBridgeBroker({ listenPort });
+    const opened = await broker.open(
+      {
+        connectionId: "renderer-1",
+        sendToolCall: vi.fn(),
+        sendToolCancel: vi.fn(),
+      },
+      {
+        bindingId: "binding-1",
+        conversationId: "conversation-1",
+        descriptors: [],
+      },
+    );
+
+    const http = broker.httpServerContribution("renderer-1", opened.bridgeId);
+    const stdio = broker.serverContribution("renderer-1", opened.bridgeId);
+    expect(new URL(http.url).port).toBe(String(listenPort));
+    expect(new URL(stdio.env.LAPIS_TOOL_BRIDGE_URL).port).toBe(
+      String(listenPort),
+    );
   });
 
   it("lists and calls a snapshotted app tool through a real MCP shim", async () => {
@@ -147,6 +188,72 @@ describe("app tool stdio bridge", () => {
         input: { query: "automation" },
       }),
     );
+  });
+
+  it("routes Streamable HTTP through an owning Web-standard server", async () => {
+    broker = new ToolBridgeBroker({
+      externalHttpBaseUrl: "http://127.0.0.1:41777/__lapis/agent-tools",
+    });
+    const onCall = vi.fn((call: ToolBridgeCall) => {
+      broker!.respond("renderer-1", {
+        bridgeId: call.bridgeId,
+        callId: call.callId,
+        result: { content: [{ type: "text", text: "attached:ok" }] },
+      });
+    });
+    const opened = await broker.open(
+      {
+        connectionId: "renderer-1",
+        sendToolCall: onCall,
+        sendToolCancel: vi.fn(),
+      },
+      {
+        bindingId: "binding-1",
+        conversationId: "conversation-1",
+        descriptors: [
+          {
+            name: "notes_attached",
+            description: "Call an attached tool",
+            inputSchema: { type: "object" },
+            effect: "read",
+          },
+        ],
+      },
+    );
+    const contribution = broker.httpServerContribution(
+      "renderer-1",
+      opened.bridgeId,
+    );
+    const fetchAttached: typeof fetch = async (input, init) => {
+      const response = await broker!.handleWebRequest(new Request(input, init));
+      return response ?? new Response(null, { status: 404 });
+    };
+    const transport = new StreamableHTTPClientTransport(
+      new URL(contribution.url),
+      {
+        fetch: fetchAttached,
+        requestInit: {
+          headers: Object.fromEntries(
+            contribution.headers.map((header) => [header.name, header.value]),
+          ),
+        },
+      },
+    );
+    client = new Client({ name: "attached-bridge-test", version: "1.0.0" });
+    await client.connect(transport);
+
+    await expect(client.listTools()).resolves.toMatchObject({
+      tools: [{ name: "notes_attached" }],
+    });
+    await expect(
+      client.callTool({ name: "notes_attached", arguments: {} }),
+    ).resolves.toMatchObject({
+      content: [{ type: "text", text: "attached:ok" }],
+    });
+    await expect(
+      broker.handleWebRequest(new Request(contribution.url)),
+    ).resolves.toMatchObject({ status: 401 });
+    expect(onCall).toHaveBeenCalledOnce();
   });
 
   it("rejects cross-connection access and reserved duplicates", async () => {

@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import path from "node:path";
 import { Server as McpServer } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -95,6 +96,8 @@ export type ToolBridgeBrokerOptions = {
   nodeCommand?: string;
   shimArgsPrefix?: string[];
   extraEnv?: Record<string, string>;
+  listenPort?: number;
+  externalHttpBaseUrl?: string;
 };
 
 export class ToolBridgeBroker {
@@ -103,6 +106,8 @@ export class ToolBridgeBroker {
   readonly #nodeCommand: string;
   readonly #shimArgsPrefix: string[];
   readonly #extraEnv: Record<string, string>;
+  readonly #listenPort: number;
+  readonly #externalHttpBaseUrl: URL | null;
   #http: Server | null = null;
   #wss: WebSocketServer | null = null;
   #listeningPromise: Promise<void> | null = null;
@@ -113,13 +118,17 @@ export class ToolBridgeBroker {
     this.#nodeCommand = options.nodeCommand ?? process.execPath;
     this.#shimArgsPrefix = [...(options.shimArgsPrefix ?? [])];
     this.#extraEnv = { ...(options.extraEnv ?? {}) };
+    this.#listenPort = validateListenPort(options.listenPort ?? 0);
+    this.#externalHttpBaseUrl = normalizeExternalHttpBaseUrl(
+      options.externalHttpBaseUrl,
+    );
   }
 
   async open(
     sink: ToolBridgeSink,
     payload: ToolBridgeOpenPayload,
   ): Promise<{ bridgeId: string }> {
-    await this.#ensureListening();
+    if (!this.#externalHttpBaseUrl) await this.#ensureListening();
     if (!payload.bindingId || !payload.conversationId) {
       throw new Error("Tool bridge requires binding and conversation identity");
     }
@@ -143,6 +152,11 @@ export class ToolBridgeBroker {
     bridgeId: string,
   ): ToolBridgeServerContribution {
     const bridge = this.#requireOwned(connectionId, bridgeId);
+    if (this.#externalHttpBaseUrl) {
+      throw new Error(
+        "External HTTP tool bridges do not expose a WebSocket stdio contribution",
+      );
+    }
     return {
       name: "lapis-tools",
       command: this.#nodeCommand,
@@ -161,14 +175,45 @@ export class ToolBridgeBroker {
     bridgeId: string,
   ): ToolBridgeHttpContribution {
     const bridge = this.#requireOwned(connectionId, bridgeId);
+    const url = this.#externalHttpBaseUrl
+      ? new URL(`mcp/${bridge.id}`, this.#externalHttpBaseUrl).href
+      : `http://127.0.0.1:${this.#port}/mcp/${bridge.id}`;
     return {
       type: "http",
       name: "lapis-tools",
-      url: `http://127.0.0.1:${this.#port}/mcp/${bridge.id}`,
+      url,
       headers: [
         { name: "Authorization", value: `Bearer ${bridge.token}` },
       ],
     };
+  }
+
+  async handleWebRequest(request: Request): Promise<Response | undefined> {
+    if (!this.#externalHttpBaseUrl) return undefined;
+    const requestUrl = new URL(request.url);
+    const routePrefix = `${this.#externalHttpBaseUrl.pathname}mcp/`;
+    if (!requestUrl.pathname.startsWith(routePrefix)) return undefined;
+    const bridgeId = requestUrl.pathname.slice(routePrefix.length);
+    if (!bridgeId || bridgeId.includes("/")) return new Response(null, { status: 404 });
+    const token = bearerToken(request.headers.get("authorization") ?? undefined);
+    const bridge = this.#bridges.get(bridgeId);
+    if (!bridge || !token || !tokensEqual(bridge.token, token)) {
+      return new Response(null, { status: 401 });
+    }
+    const server = createLapisMcpServer(bridge.descriptors, (name, input, signal) =>
+      this.#invokeLocal(bridge, name, input, signal),
+    );
+    const transport = new WebStandardStreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+      enableJsonResponse: true,
+    });
+    await server.connect(transport);
+    try {
+      return await transport.handleRequest(request);
+    } finally {
+      await transport.close().catch(() => undefined);
+      await server.close().catch(() => undefined);
+    }
   }
 
   respond(connectionId: string, response: ToolBridgeResponse): void {
@@ -256,7 +301,7 @@ export class ToolBridgeBroker {
       });
       http.once("error", reject);
     });
-    http.listen(0, "127.0.0.1");
+    http.listen(this.#listenPort, "127.0.0.1");
     try {
       await this.#listeningPromise;
     } catch (error) {
@@ -477,6 +522,30 @@ export class ToolBridgeBroker {
     }
     bridge.sockets.clear();
   }
+}
+
+function validateListenPort(port: number): number {
+  if (!Number.isInteger(port) || port < 0 || port > 65_535) {
+    throw new Error("Tool bridge listen port must be an integer from 0 to 65535");
+  }
+  return port;
+}
+
+function normalizeExternalHttpBaseUrl(value: string | undefined): URL | null {
+  if (value === undefined) return null;
+  const url = new URL(value);
+  if (
+    url.protocol !== "http:" ||
+    url.hostname !== "127.0.0.1" ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash
+  ) {
+    throw new Error("External tool bridge URL must be an uncredentialed 127.0.0.1 HTTP URL");
+  }
+  url.pathname = `${url.pathname.replace(/\/*$/u, "")}/`;
+  return url;
 }
 
 function sanitizeDescriptors(

@@ -33,3 +33,5 @@
 | AH-MCP-001   | Implemented | `src/tool-bridge.test.ts` covers v3 bridge messages, reserved `lapis-tools`, token authorization, and disconnect cancellation. |
 | AH-MCP-002   | Implemented | `src/executor.test.ts` projects MCP servers with `type: stdio` and required stdio fields. |
 | AH-MCP-003   | Implemented | Executor tests project Cursor `lapis-tools` as `type: http` with loopback URL and bearer headers; tool-bridge tests list and call through Streamable HTTP. |
+| AH-MCP-004   | Implemented | Tool-bridge tests bind an owner-selected loopback port and verify that HTTP and WebSocket contributions advertise it. |
+| AH-MCP-005   | Implemented | Tool-bridge tests route an official SDK client through the attached Web-standard handler and reject missing bearer authorization. |
