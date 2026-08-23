@@ -7,7 +7,7 @@ This repository owns the standalone process host package `@lapismd/ai-host`.
 - Keep acpx, ACP session execution, disposable model discovery, the WebSocket
   server, token handshake, replay buffer, MCP stdio shim, `lapis-ai-host`
   CLI, and the portable `./file-tools` kernel in this repository.
-- Consumer hosts (Electron, web, Storybook, smoke supervisors) attach through
+- Consumer hosts (Deno desktop, web, Storybook, smoke supervisors) attach through
   public exports. Do not move vault, conversation, or plugin policy here.
 - Consumer plugins MUST NOT depend on this package at runtime.
 - `@lapis-notes/api` MAY depend on `@lapismd/ai-host/file-tools` only. That

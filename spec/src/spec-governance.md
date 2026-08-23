@@ -26,4 +26,6 @@ MUST update the mapped chapter in the same Jujutsu change.
 | `spec-validator.config.mjs`, `AGENTS.md`, `pnpm-workspace.yaml`, `spec/book.toml` | `spec-governance.md` |
 
 Tracked `AGENTS.md` is standing workflow: after a verified slice, commit with
-Jujutsu. Do not wait for a later user request.
+Jujutsu. Do not wait for a later user request. Its consumer guidance names Deno
+desktop, web, Storybook, and smoke supervisors; it does not authorize a second
+native desktop host.

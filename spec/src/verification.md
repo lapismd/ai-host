@@ -21,7 +21,7 @@
 | AH-WS-001    | Implemented | `src/handshake.test.ts` rejects missing hello, a bad token, and a first command. |
 | AH-WS-002    | Implemented | `src/protocol.ts` and `src/ws-contract.test.ts` use `desktop_agent_acp_*` commands and `agent-runtime-event` frames. |
 | AH-WS-003    | Implemented | Executor and WebSocket tests reject pending commands on transport closure and emit one runtime error. |
-| AH-WS-004    | Implemented | `src/ws-contract.test.ts` issues two commands on a fresh bridge and shares one handshake. |
+| AH-WS-004    | Implemented | `src/ws-contract.test.ts` asserts the Deno runtime identity, issues two commands on a fresh bridge, and shares one handshake. |
 | AH-PROTO-001 | Implemented | `src/replay-buffer.test.ts` and `src/ws-contract.test.ts` cover bounds, ordered subscribe, explicit-close cleanup, and no prompt resend. |
 | AH-ACP-001   | Implemented | `src/acp-session-options.test.ts` and executor tests keep sessions usable when thinking is unadvertised. |
 | AH-ACP-002   | Implemented | Executor tests preserve a successful catalog when backend `session/close` is unsupported. |

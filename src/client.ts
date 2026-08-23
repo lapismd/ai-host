@@ -20,7 +20,7 @@ export type AgentRuntimeAttachConfig = {
 };
 
 export type AgentRuntimeBridge = {
-  readonly runtime: "electron-desktop";
+  readonly runtime: "deno-desktop";
   readonly capabilities: {
     "agent-runtime": {
       id: "agent-runtime";
@@ -443,7 +443,7 @@ export function createAgentRuntimeBridge(
   }
 
   return {
-    runtime: "electron-desktop",
+    runtime: "deno-desktop",
     capabilities: {
       "agent-runtime": agentRuntimeCapability,
     },

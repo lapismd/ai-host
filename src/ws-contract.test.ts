@@ -487,6 +487,7 @@ describe("agent-runtime websocket contract", () => {
         },
       }),
     ).toBe(true);
+    expect(registered?.runtime).toBe("deno-desktop");
     expect(registered?.capabilities["agent-runtime"]?.status).toBe("available");
 
     expect(
