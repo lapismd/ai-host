@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { existsSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Server as McpServer } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
@@ -114,7 +114,7 @@ export class ToolBridgeBroker {
   #port = 0;
 
   constructor(options: ToolBridgeBrokerOptions = {}) {
-    this.#shimPath = options.shimPath ?? defaultShimPath();
+    this.#shimPath = options.shimPath ?? resolveDefaultShimPath();
     this.#nodeCommand = options.nodeCommand ?? process.execPath;
     this.#shimArgsPrefix = [...(options.shimArgsPrefix ?? [])];
     this.#extraEnv = { ...(options.extraEnv ?? {}) };
@@ -655,8 +655,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function defaultShimPath(): string {
-  const directory = path.dirname(process.argv[1] || process.cwd());
-  const modulePath = path.join(directory, "mcp-shim.mjs");
-  return existsSync(modulePath) ? modulePath : path.join(directory, "mcp-shim.js");
+export function resolveDefaultShimPath(moduleUrl = import.meta.url): string {
+  const directory = path.dirname(fileURLToPath(moduleUrl));
+  const packageRoot = ["src", "dist"].includes(path.basename(directory))
+    ? path.dirname(directory)
+    : directory;
+  return path.join(packageRoot, "bin", "lapis-mcp-shim.mjs");
 }

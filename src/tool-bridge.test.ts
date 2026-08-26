@@ -6,7 +6,11 @@ import {
 } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { createServer } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ToolBridgeBroker, type ToolBridgeCall } from "./tool-bridge";
+import {
+  ToolBridgeBroker,
+  resolveDefaultShimPath,
+  type ToolBridgeCall,
+} from "./tool-bridge";
 
 async function unusedLoopbackPort(): Promise<number> {
   const server = createServer();
@@ -57,6 +61,20 @@ describe("app tool stdio bridge", () => {
     expect(new URL(stdio.env.LAPIS_TOOL_BRIDGE_URL).port).toBe(
       String(listenPort),
     );
+    expect(stdio.args.at(-1)).toBe(resolveDefaultShimPath());
+  });
+
+  it("resolves the default shim from source and built package modules", () => {
+    const expected = new URL("../bin/lapis-mcp-shim.mjs", import.meta.url)
+      .pathname;
+    expect(
+      resolveDefaultShimPath(new URL("./tool-bridge.ts", import.meta.url).href),
+    ).toBe(expected);
+    expect(
+      resolveDefaultShimPath(
+        new URL("../dist/tool-bridge.js", import.meta.url).href,
+      ),
+    ).toBe(expected);
   });
 
   it("lists and calls a snapshotted app tool through a real MCP shim", async () => {

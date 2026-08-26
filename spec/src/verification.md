@@ -36,3 +36,4 @@
 | AH-MCP-003   | Implemented | Executor tests project Cursor `lapis-tools` as `type: http` with loopback URL and bearer headers; tool-bridge tests list and call through Streamable HTTP. |
 | AH-MCP-004   | Implemented | Tool-bridge tests bind an owner-selected loopback port and verify that HTTP and WebSocket contributions advertise it. |
 | AH-MCP-005   | Implemented | Tool-bridge tests route an official SDK client through the attached Web-standard handler and reject missing bearer authorization. |
+| AH-MCP-006   | Implemented | Tool-bridge tests resolve the default stdio shim from source and built module locations without consulting the caller entrypoint; the real Codex ACP smoke lane starts `lapis-tools` from that launcher. |

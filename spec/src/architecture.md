@@ -8,7 +8,9 @@ an ignored `.env` `LAPIS_AGENT_RUNTIME_TOKEN` when missing, then starts the
 existing `serve` command with that token. It is a non-authoritative execution
 transport: conversations, tool authority, and note content remain in the
 consuming application. The file-tools leaf supplies schemas and apply
-algorithms only.
+algorithms only. The stdio MCP projection launches the package-owned
+`bin/lapis-mcp-shim.mjs` entrypoint in both source and built consumers; that
+stable launcher delegates to the generated shim bundle.
 
 ## Requirements
 

@@ -23,6 +23,7 @@ await build({
   format: "esm",
   target: "node22",
   banner: { js: "#!/usr/bin/env node" },
+  external: ["ws"],
 });
 
 console.log("[ai-host] cli and MCP shim bundles written");
