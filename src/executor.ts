@@ -47,6 +47,7 @@ export type SpawnPayload = {
 };
 
 export type AcpStartPayload = {
+  sessionId?: string;
   workspace?: string;
   agent?: string;
   model?: { provider?: string; model?: string };
@@ -160,6 +161,10 @@ export type AgentRuntimeExecutor = {
     sink: AgentHostSink,
     payload: AcpStartPayload,
   ): Promise<{ sessionId: string }>;
+  startAcpSessionDeferred(
+    sink: AgentHostSink,
+    payload: AcpStartPayload,
+  ): { sessionId: string };
   listAcpModels(
     sink: AgentHostSink,
     payload: Pick<AcpStartPayload, "workspace" | "agent">,
@@ -194,6 +199,7 @@ export function createAgentRuntimeExecutor(options?: {
   const processes = new Map<string, ChildProcessWithoutNullStreams>();
   const processBridges = new Map<string, { connectionId: string; bridgeId: string }>();
   const acpSessions = new Map<string, AcpSessionState>();
+  const pendingAcpSessions = new Map<string, PendingAcpSessionState>();
   const pendingApprovals = new Map<
     string,
     (decision: AcpPermissionDecision) => void
@@ -201,6 +207,145 @@ export function createAgentRuntimeExecutor(options?: {
   const createAcpx = options?.createAcpxRuntime ?? defaultCreateAcpxRuntime;
   const toolBridges =
     options?.toolBridgeBroker ?? new ToolBridgeBroker(options?.toolBridgeOptions);
+
+  async function initializeAcpSession(
+    sink: AgentHostSink,
+    payload: AcpStartPayload,
+    sessionId: string,
+    initialState?: AcpSessionState,
+  ): Promise<AcpSessionState> {
+    const existing = acpSessions.get(sessionId);
+    if (existing) {
+      if (existing.appToolBridgeId !== payload.appToolBridgeId) {
+        await existing.runtime.close({
+          handle: existing.handle,
+          reason: "app tool bridge changed",
+        });
+        acpSessions.delete(sessionId);
+        if (existing.connectionId && existing.appToolBridgeId) {
+          toolBridges.closeBridge(
+            existing.connectionId,
+            existing.appToolBridgeId,
+          );
+        }
+      } else {
+        existing.sink = sink;
+        return existing;
+      }
+    }
+    const effectivePayload = withAppToolMcpServer(payload, sink, toolBridges);
+    const agent = resolveAcpAgent(effectivePayload);
+    const session = initialState ?? createAcpSessionState(sessionId, sink);
+    session.sink = sink;
+    const runtimeSink: AgentRuntimeInputSink = {
+      sendRuntimeEvent(event) {
+        emitRuntimeEvent(session, session.currentRunId, event);
+      },
+      sendProcessMessage(event) {
+        session.sink.sendProcessMessage(event);
+      },
+    };
+    const runtime = await createAcpx(
+      runtimeSink,
+      sessionId,
+      effectivePayload,
+      pendingApprovals,
+    );
+    const handle = await runtime.ensureSession({
+      sessionKey: sessionId,
+      agent,
+      mode: "persistent",
+      cwd: effectivePayload.workspace,
+      sessionOptions: toAcpxSessionOptions(effectivePayload),
+    });
+    const thinking = toAcpxThinkingValue({
+      agent,
+      thinking: effectivePayload.thinking,
+    });
+    if (thinking && (await supportsThinkingConfiguration(runtime, handle))) {
+      try {
+        if (!runtime.setConfigOption) {
+          throw new Error(
+            `ACP agent ${agent} does not support thinking configuration.`,
+          );
+        }
+        await runtime.setConfigOption({
+          handle,
+          key: "thinking",
+          value: thinking,
+        });
+      } catch (error) {
+        await runtime.close({
+          handle,
+          reason: "thinking configuration unavailable",
+          discardPersistentState: !payload.resumeSessionId,
+        });
+        throw error;
+      }
+    }
+    session.runtime = runtime;
+    session.handle = handle;
+    session.connectionId = sink.connectionId;
+    session.appToolBridgeId = effectivePayload.appToolBridgeId;
+    acpSessions.set(sessionId, session);
+    return session;
+  }
+
+  function beginAcpTurn(
+    session: AcpSessionState,
+    sink: AgentHostSink,
+    text: string,
+    runId: string,
+  ): void {
+    session.sink = sink;
+    session.currentRunId = runId;
+    const turn = session.runtime.startTurn({
+      handle: session.handle,
+      text,
+      mode: "prompt",
+      requestId: runId,
+    });
+    void (async () => {
+      try {
+        for await (const event of turn.events) {
+          emitRuntimeEvent(session, runId, {
+            sessionId: session.sessionId,
+            type: "event",
+            event,
+          });
+        }
+        const result = await turn.result;
+        if (result.status === "failed") {
+          emitRuntimeEvent(session, runId, {
+            sessionId: session.sessionId,
+            type: "event",
+            event: {
+              type: "error",
+              message: result.error?.message ?? "ACP turn failed",
+            },
+          });
+          return;
+        }
+        emitRuntimeEvent(session, runId, {
+          sessionId: session.sessionId,
+          type: "event",
+          event: {
+            type: "done",
+            stopReason: result.stopReason ?? result.status,
+          },
+        });
+      } catch (error) {
+        emitRuntimeEvent(session, runId, {
+          sessionId: session.sessionId,
+          type: "event",
+          event: {
+            type: "error",
+            message: error instanceof Error ? error.message : String(error),
+          },
+        });
+      }
+    })();
+  }
 
   return {
     spawnProcess(sink, payload) {
@@ -260,91 +405,53 @@ export function createAgentRuntimeExecutor(options?: {
     },
 
     async startAcpSession(sink, payload) {
-      const sessionId = payload.resumeSessionId ?? randomUUID();
-      const existing = acpSessions.get(sessionId);
-      if (existing) {
-        if (existing.appToolBridgeId !== payload.appToolBridgeId) {
-          await existing.runtime.close({
-            handle: existing.handle,
-            reason: "app tool bridge changed",
-          });
-          acpSessions.delete(sessionId);
-          if (existing.connectionId && existing.appToolBridgeId) {
-            toolBridges.closeBridge(
-              existing.connectionId,
-              existing.appToolBridgeId,
-            );
-          }
-        } else {
-          existing.sink = sink;
-          return { sessionId };
-        }
+      const sessionId = resolveAcpSessionId(payload);
+      const pending = pendingAcpSessions.get(sessionId);
+      if (pending) {
+        pending.session.sink = sink;
+        await pending.ready;
+        return { sessionId };
       }
-      const effectivePayload = withAppToolMcpServer(
-        payload,
-        sink,
-        toolBridges,
-      );
-      const agent = resolveAcpAgent(effectivePayload);
-      const session: AcpSessionState = {
-        sessionId,
-        sink,
-        currentRunId: "session",
-        nextSequence: 0,
-        runtime: undefined as unknown as AcpxRuntimeLike,
-        handle: undefined as unknown as AcpRuntimeHandle,
-      };
-      const runtimeSink: AgentRuntimeInputSink = {
-        sendRuntimeEvent(event) {
-          emitRuntimeEvent(session, session.currentRunId, event);
-        },
-        sendProcessMessage(event) {
-          session.sink.sendProcessMessage(event);
-        },
-      };
-      const runtime = await createAcpx(
-        runtimeSink,
-        sessionId,
-        effectivePayload,
-        pendingApprovals,
-      );
-      const handle = await runtime.ensureSession({
-        sessionKey: sessionId,
-        agent,
-        mode: "persistent",
-        cwd: effectivePayload.workspace,
-        sessionOptions: toAcpxSessionOptions(effectivePayload),
-      });
-      const thinking = toAcpxThinkingValue({
-        agent,
-        thinking: effectivePayload.thinking,
-      });
-      if (thinking && (await supportsThinkingConfiguration(runtime, handle))) {
-        try {
-          if (!runtime.setConfigOption) {
-            throw new Error(
-              `ACP agent ${agent} does not support thinking configuration.`,
-            );
-          }
-          await runtime.setConfigOption({
-            handle,
-            key: "thinking",
-            value: thinking,
-          });
-        } catch (error) {
-          await runtime.close({
-            handle,
-            reason: "thinking configuration unavailable",
-            discardPersistentState: !payload.resumeSessionId,
-          });
-          throw error;
-        }
+      await initializeAcpSession(sink, payload, sessionId);
+      return { sessionId };
+    },
+
+    startAcpSessionDeferred(sink, payload) {
+      const sessionId = resolveAcpSessionId(payload);
+      const existingPending = pendingAcpSessions.get(sessionId);
+      if (existingPending) {
+        existingPending.session.sink = sink;
+        return { sessionId };
       }
-      session.runtime = runtime;
-      session.handle = handle;
-      session.connectionId = sink.connectionId;
-      session.appToolBridgeId = effectivePayload.appToolBridgeId;
-      acpSessions.set(sessionId, session);
+      const session = createAcpSessionState(sessionId, sink);
+      const pending: PendingAcpSessionState = {
+        session,
+        prompts: new Set(),
+        closed: false,
+        ready: Promise.resolve().then(() =>
+          initializeAcpSession(sink, payload, sessionId, session),
+        ),
+      };
+      pendingAcpSessions.set(sessionId, pending);
+      void pending.ready.then(
+        () => {
+          pendingAcpSessions.delete(sessionId);
+        },
+        (error) => {
+          pendingAcpSessions.delete(sessionId);
+          if (pending.closed) return;
+          const runId =
+            pending.prompts.values().next().value?.runId ?? "session";
+          emitRuntimeEvent(session, runId, {
+            sessionId,
+            type: "event",
+            event: {
+              type: "error",
+              message: error instanceof Error ? error.message : String(error),
+            },
+          });
+        },
+      );
       return { sessionId };
     },
 
@@ -406,73 +513,57 @@ export function createAgentRuntimeExecutor(options?: {
 
     async promptAcpSession(sink, sessionId, text) {
       const session = acpSessions.get(sessionId);
-      if (!session) throw new Error(`Unknown ACP session: ${sessionId}`);
-      session.sink = sink;
       const runId = randomUUID();
-      session.currentRunId = runId;
-      const turn = session.runtime.startTurn({
-        handle: session.handle,
-        text,
-        mode: "prompt",
-        requestId: runId,
-      });
-      void (async () => {
-        try {
-          for await (const event of turn.events) {
-            emitRuntimeEvent(session, runId, {
-              sessionId,
-              type: "event",
-              event,
-            });
+      if (session) {
+        beginAcpTurn(session, sink, text, runId);
+        return { runId };
+      }
+      const pending = pendingAcpSessions.get(sessionId);
+      if (!pending) throw new Error(`Unknown ACP session: ${sessionId}`);
+      pending.session.sink = sink;
+      pending.session.currentRunId = runId;
+      const prompt: PendingAcpPrompt = { runId, cancelled: false };
+      pending.prompts.add(prompt);
+      void pending.ready.then(
+        (readySession) => {
+          pending.prompts.delete(prompt);
+          if (!prompt.cancelled && !pending.closed) {
+            beginAcpTurn(readySession, sink, text, runId);
           }
-          const result = await turn.result;
-          if (result.status === "failed") {
-            emitRuntimeEvent(session, runId, {
-              sessionId,
-              type: "event",
-              event: {
-                type: "error",
-                message: result.error?.message ?? "ACP turn failed",
-              },
-            });
-            return;
-          }
-          emitRuntimeEvent(session, runId, {
-            sessionId,
-            type: "event",
-            event: {
-              type: "done",
-              stopReason: result.stopReason ?? result.status,
-            },
-          });
-        } catch (error) {
-          emitRuntimeEvent(session, runId, {
-            sessionId,
-            type: "event",
-            event: {
-              type: "error",
-              message: error instanceof Error ? error.message : String(error),
-            },
-          });
-        }
-      })();
+        },
+        () => {
+          pending.prompts.delete(prompt);
+        },
+      );
       return { runId };
     },
 
     async cancelAcpSession(sessionId) {
       const session = acpSessions.get(sessionId);
-      if (!session) return;
-      await session.runtime.cancel({ handle: session.handle });
+      if (session) {
+        await session.runtime.cancel({ handle: session.handle });
+        return;
+      }
+      const pending = pendingAcpSessions.get(sessionId);
+      if (!pending) return;
+      for (const prompt of pending.prompts) prompt.cancelled = true;
     },
 
     async closeAcpSession(sessionId) {
       const session = acpSessions.get(sessionId);
-      if (!session) return;
-      await session.runtime.close({ handle: session.handle, reason: "close" });
-      acpSessions.delete(sessionId);
-      if (session.connectionId && session.appToolBridgeId) {
-        toolBridges.closeBridge(session.connectionId, session.appToolBridgeId);
+      if (session) {
+        await closeAcpSessionState(session, acpSessions, toolBridges);
+        return;
       }
+      const pending = pendingAcpSessions.get(sessionId);
+      if (!pending) return;
+      pending.closed = true;
+      for (const prompt of pending.prompts) prompt.cancelled = true;
+      void pending.ready.then(
+        (readySession) =>
+          closeAcpSessionState(readySession, acpSessions, toolBridges),
+        () => undefined,
+      );
     },
 
     respondAcpSession(sessionId, requestId, decision) {
@@ -503,6 +594,17 @@ export function createAgentRuntimeExecutor(options?: {
       for (const child of processes.values()) child.kill();
       processes.clear();
       processBridges.clear();
+      for (const pending of pendingAcpSessions.values()) {
+        pending.closed = true;
+        for (const prompt of pending.prompts) prompt.cancelled = true;
+        void pending.ready.then(
+          (session) => closeAcpSessionState(session, acpSessions, toolBridges),
+          () => undefined,
+        );
+      }
+      for (const session of [...acpSessions.values()]) {
+        await closeAcpSessionState(session, acpSessions, toolBridges);
+      }
       await toolBridges.close();
     },
   };
@@ -518,6 +620,55 @@ type AcpSessionState = {
   connectionId?: string;
   appToolBridgeId?: string;
 };
+
+type PendingAcpPrompt = {
+  runId: string;
+  cancelled: boolean;
+};
+
+type PendingAcpSessionState = {
+  session: AcpSessionState;
+  ready: Promise<AcpSessionState>;
+  prompts: Set<PendingAcpPrompt>;
+  closed: boolean;
+};
+
+function createAcpSessionState(
+  sessionId: string,
+  sink: AgentHostSink,
+): AcpSessionState {
+  return {
+    sessionId,
+    sink,
+    currentRunId: "session",
+    nextSequence: 0,
+    runtime: undefined as unknown as AcpxRuntimeLike,
+    handle: undefined as unknown as AcpRuntimeHandle,
+  };
+}
+
+function resolveAcpSessionId(payload: AcpStartPayload): string {
+  const sessionId = payload.sessionId?.trim();
+  const resumeSessionId = payload.resumeSessionId?.trim();
+  if (sessionId && resumeSessionId && sessionId !== resumeSessionId) {
+    throw new Error(
+      "ACP sessionId must match resumeSessionId when both are provided.",
+    );
+  }
+  return sessionId || resumeSessionId || randomUUID();
+}
+
+async function closeAcpSessionState(
+  session: AcpSessionState,
+  sessions: Map<string, AcpSessionState>,
+  toolBridges: ToolBridgeBroker,
+): Promise<void> {
+  await session.runtime.close({ handle: session.handle, reason: "close" });
+  sessions.delete(session.sessionId);
+  if (session.connectionId && session.appToolBridgeId) {
+    toolBridges.closeBridge(session.connectionId, session.appToolBridgeId);
+  }
+}
 
 function emitRuntimeEvent(
   session: AcpSessionState,

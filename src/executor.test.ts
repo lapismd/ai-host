@@ -198,6 +198,145 @@ describe("agent runtime executor sequencing", () => {
   });
 });
 
+describe("agent runtime executor deferred ACP startup", () => {
+  it("reserves a caller-selected session id and queues its prompt", async () => {
+    let finishStartup!: () => void;
+    const startup = new Promise<void>((resolve) => {
+      finishStartup = resolve;
+    });
+    const startTurn = vi.fn(() => ({
+      events: (async function* () {})(),
+      result: Promise.resolve({ status: "completed" as const }),
+    }));
+    const fake = createRuntime([]);
+    fake.runtime.ensureSession = async (input) => {
+      await startup;
+      return { sessionKey: input.sessionKey, backend: input.agent };
+    };
+    fake.runtime.startTurn = startTurn;
+    const executor = createAgentRuntimeExecutor({
+      createAcpxRuntime: async () => fake.runtime,
+    });
+
+    expect(
+      executor.startAcpSessionDeferred(sink, {
+        sessionId: "reserved-session",
+        agent: "cursor",
+      }),
+    ).toEqual({ sessionId: "reserved-session" });
+    const prompted = await executor.promptAcpSession(
+      sink,
+      "reserved-session",
+      "hello",
+    );
+    expect(prompted.runId).toBeTruthy();
+    expect(startTurn).not.toHaveBeenCalled();
+
+    finishStartup();
+    await expect.poll(() => startTurn.mock.calls.length).toBe(1);
+    expect(startTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: "hello",
+        requestId: prompted.runId,
+      }),
+    );
+    await executor.closeAcpSession("reserved-session");
+  });
+
+  it("cancels a prompt queued during startup without discarding the session", async () => {
+    let finishStartup!: () => void;
+    const startup = new Promise<void>((resolve) => {
+      finishStartup = resolve;
+    });
+    const startTurn = vi.fn(() => ({
+      events: (async function* () {})(),
+      result: Promise.resolve({ status: "completed" as const }),
+    }));
+    const fake = createRuntime([]);
+    fake.runtime.ensureSession = async (input) => {
+      await startup;
+      return { sessionKey: input.sessionKey, backend: input.agent };
+    };
+    fake.runtime.startTurn = startTurn;
+    const executor = createAgentRuntimeExecutor({
+      createAcpxRuntime: async () => fake.runtime,
+    });
+
+    executor.startAcpSessionDeferred(sink, {
+      sessionId: "cancelled-pending-session",
+      agent: "codex",
+    });
+    await executor.promptAcpSession(
+      sink,
+      "cancelled-pending-session",
+      "cancel me",
+    );
+    await executor.cancelAcpSession("cancelled-pending-session");
+    finishStartup();
+    await executor.startAcpSession(sink, {
+      sessionId: "cancelled-pending-session",
+      agent: "codex",
+    });
+    expect(startTurn).not.toHaveBeenCalled();
+
+    await executor.promptAcpSession(
+      sink,
+      "cancelled-pending-session",
+      "next turn",
+    );
+    expect(startTurn).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "next turn" }),
+    );
+    await executor.closeAcpSession("cancelled-pending-session");
+  });
+
+  it("emits one sequenced error when deferred startup fails", async () => {
+    const eventSink = {
+      sendRuntimeEvent: vi.fn(),
+      sendProcessMessage: vi.fn(),
+    };
+    const executor = createAgentRuntimeExecutor({
+      createAcpxRuntime: async () => {
+        throw new Error("startup broke");
+      },
+    });
+
+    executor.startAcpSessionDeferred(eventSink, {
+      sessionId: "failed-session",
+      agent: "cursor",
+    });
+    const prompted = await executor.promptAcpSession(
+      eventSink,
+      "failed-session",
+      "hello",
+    );
+
+    await expect
+      .poll(() => eventSink.sendRuntimeEvent.mock.calls.length)
+      .toBe(1);
+    expect(eventSink.sendRuntimeEvent).toHaveBeenCalledWith({
+      sessionId: "failed-session",
+      runId: prompted.runId,
+      sequence: 1,
+      event: {
+        type: "event",
+        event: { type: "error", message: "startup broke" },
+        request: undefined,
+      },
+    });
+  });
+
+  it("rejects conflicting caller and resume session ids", () => {
+    const executor = createAgentRuntimeExecutor();
+    expect(() =>
+      executor.startAcpSessionDeferred(sink, {
+        sessionId: "new-session",
+        resumeSessionId: "stored-session",
+      }),
+    ).toThrow("must match resumeSessionId");
+  });
+});
+
 describe("agent runtime MCP projection", () => {
   it("converts environment records to ACP name/value entries", () => {
     expect(
