@@ -174,6 +174,11 @@ export type AgentRuntimeExecutor = {
     sessionId: string,
     text: string,
   ): Promise<{ runId: string }>;
+  promptAcpSessionDeferred(
+    sink: AgentHostSink,
+    sessionId: string,
+    text: string,
+  ): { runId: string };
   cancelAcpSession(sessionId: string): Promise<void>;
   closeAcpSession(sessionId: string): Promise<void>;
   respondAcpSession(
@@ -347,6 +352,36 @@ export function createAgentRuntimeExecutor(options?: {
     })();
   }
 
+  function promptAcpSessionNow(
+    sink: AgentHostSink,
+    sessionId: string,
+    text: string,
+    runId: string,
+  ): void {
+    const session = acpSessions.get(sessionId);
+    if (session) {
+      beginAcpTurn(session, sink, text, runId);
+      return;
+    }
+    const pending = pendingAcpSessions.get(sessionId);
+    if (!pending) throw new Error(`Unknown ACP session: ${sessionId}`);
+    pending.session.sink = sink;
+    pending.session.currentRunId = runId;
+    const prompt: PendingAcpPrompt = { runId, cancelled: false };
+    pending.prompts.add(prompt);
+    void pending.ready.then(
+      (readySession) => {
+        pending.prompts.delete(prompt);
+        if (!prompt.cancelled && !pending.closed) {
+          beginAcpTurn(readySession, sink, text, runId);
+        }
+      },
+      () => {
+        pending.prompts.delete(prompt);
+      },
+    );
+  }
+
   return {
     spawnProcess(sink, payload) {
       const command = payload.command?.trim();
@@ -428,9 +463,16 @@ export function createAgentRuntimeExecutor(options?: {
         session,
         prompts: new Set(),
         closed: false,
-        ready: Promise.resolve().then(() =>
-          initializeAcpSession(sink, payload, sessionId, session),
-        ),
+        ready: new Promise<AcpSessionState>((resolve, reject) => {
+          setTimeout(() => {
+            void initializeAcpSession(
+              sink,
+              payload,
+              sessionId,
+              session,
+            ).then(resolve, reject);
+          }, 0);
+        }),
       };
       pendingAcpSessions.set(sessionId, pending);
       void pending.ready.then(
@@ -512,29 +554,31 @@ export function createAgentRuntimeExecutor(options?: {
     },
 
     async promptAcpSession(sink, sessionId, text) {
-      const session = acpSessions.get(sessionId);
       const runId = randomUUID();
-      if (session) {
-        beginAcpTurn(session, sink, text, runId);
-        return { runId };
-      }
-      const pending = pendingAcpSessions.get(sessionId);
-      if (!pending) throw new Error(`Unknown ACP session: ${sessionId}`);
-      pending.session.sink = sink;
-      pending.session.currentRunId = runId;
-      const prompt: PendingAcpPrompt = { runId, cancelled: false };
-      pending.prompts.add(prompt);
-      void pending.ready.then(
-        (readySession) => {
-          pending.prompts.delete(prompt);
-          if (!prompt.cancelled && !pending.closed) {
-            beginAcpTurn(readySession, sink, text, runId);
-          }
-        },
-        () => {
-          pending.prompts.delete(prompt);
-        },
-      );
+      promptAcpSessionNow(sink, sessionId, text, runId);
+      return { runId };
+    },
+
+    promptAcpSessionDeferred(sink, sessionId, text) {
+      const runId = randomUUID();
+      setTimeout(() => {
+        try {
+          promptAcpSessionNow(sink, sessionId, text, runId);
+        } catch (error) {
+          const session =
+            acpSessions.get(sessionId) ??
+            pendingAcpSessions.get(sessionId)?.session ??
+            createAcpSessionState(sessionId, sink);
+          emitRuntimeEvent(session, runId, {
+            sessionId,
+            type: "event",
+            event: {
+              type: "error",
+              message: error instanceof Error ? error.message : String(error),
+            },
+          });
+        }
+      }, 0);
       return { runId };
     },
 

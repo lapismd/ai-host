@@ -30,7 +30,8 @@
 | AH-ACP-005   | Implemented | Executor restart-resume test reuses the host id as sessionKey and omits acpx resumeSessionId. |
 | AH-ACP-006   | Implemented | Session-option tests append a path-free available_skills manifest and omit path-bearing metadata. |
 | AH-ACP-007   | Implemented | Session-option tests append path-free sessionBootstrap with the skills manifest and omit path-bearing bootstrap text. |
-| AH-ACP-008   | Implemented | Executor deferred-start tests reserve a stable id, queue a prompt until initialization completes, cancel pending prompts, surface one sequenced startup error, and retain awaited-start behavior. |
+| AH-ACP-008   | Implemented | Executor deferred-start tests keep initialization out of the native response microtask queue, reserve a stable id, queue a prompt until initialization completes, cancel pending prompts, surface one sequenced startup error, and retain awaited-start behavior. |
+| AH-ACP-009   | Implemented | Executor deferred-prompt tests reserve a run id synchronously and prove the ACP turn starts only in a later event-loop task. |
 | AH-MCP-001   | Implemented | `src/tool-bridge.test.ts` covers v3 bridge messages, reserved `lapis-tools`, token authorization, and disconnect cancellation. |
 | AH-MCP-002   | Implemented | `src/executor.test.ts` projects MCP servers with `type: stdio` and required stdio fields. |
 | AH-MCP-003   | Implemented | Executor tests project Cursor `lapis-tools` as `type: http` with loopback URL and bearer headers; tool-bridge tests list and call through Streamable HTTP. |

@@ -199,6 +199,63 @@ describe("agent runtime executor sequencing", () => {
 });
 
 describe("agent runtime executor deferred ACP startup", () => {
+  it("returns before a deferred native prompt begins", async () => {
+    const fake = createRuntime([]);
+    const startTurn = vi.fn(fake.runtime.startTurn.bind(fake.runtime));
+    fake.runtime.startTurn = startTurn;
+    const executor = createAgentRuntimeExecutor({
+      createAcpxRuntime: async () => fake.runtime,
+    });
+    const started = await executor.startAcpSession(sink, { agent: "codex" });
+
+    vi.useFakeTimers();
+    try {
+      const prompted = executor.promptAcpSessionDeferred(
+        sink,
+        started.sessionId,
+        "native prompt",
+      );
+      expect(prompted.runId).toBeTruthy();
+      await Promise.resolve();
+      expect(startTurn).not.toHaveBeenCalled();
+
+      await vi.runOnlyPendingTimersAsync();
+      expect(startTurn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: "native prompt",
+          requestId: prompted.runId,
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+      await executor.closeAcpSession(started.sessionId);
+    }
+  });
+
+  it("waits for a later event-loop task before native initialization", async () => {
+    vi.useFakeTimers();
+    try {
+      const fake = createRuntime([]);
+      const createAcpxRuntime = vi.fn(async () => fake.runtime);
+      const executor = createAgentRuntimeExecutor({ createAcpxRuntime });
+
+      expect(
+        executor.startAcpSessionDeferred(sink, {
+          sessionId: "native-flush-session",
+          agent: "codex",
+        }),
+      ).toEqual({ sessionId: "native-flush-session" });
+      await Promise.resolve();
+      expect(createAcpxRuntime).not.toHaveBeenCalled();
+
+      await vi.runOnlyPendingTimersAsync();
+      expect(createAcpxRuntime).toHaveBeenCalledOnce();
+      await executor.closeAcpSession("native-flush-session");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("reserves a caller-selected session id and queues its prompt", async () => {
     let finishStartup!: () => void;
     const startup = new Promise<void>((resolve) => {
