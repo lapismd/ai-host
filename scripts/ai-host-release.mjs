@@ -305,6 +305,7 @@ function sha(filePath, algorithm) {
 function packTarball() {
   rmSync(tarballDir, { recursive: true, force: true });
   mkdirSync(tarballDir, { recursive: true });
+  runInherited("pnpm", ["build"]);
   const output = run("pnpm", [
     "pack",
     "--pack-destination",

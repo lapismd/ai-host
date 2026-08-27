@@ -27,7 +27,9 @@ Release automation is package-owned and repository-local. The first
 tarball because the package does not exist on npm yet. After bootstrap, future
 versions use Changesets version pull requests, an immutable tarball artifact,
 the `npm-production` trusted publishing environment, npm OIDC provenance, and a
-per-package GitHub tag/release named `ai-host@<version>`.
+per-package GitHub tag/release named `ai-host@<version>`. The release pack gate
+MUST rebuild `dist` immediately before creating the tarball so fresh CI
+checkouts and workstation runs validate the same artifact shape.
 
 ## Requirements
 
@@ -36,4 +38,4 @@ per-package GitHub tag/release named `ai-host@<version>`.
 | AH-PKG-001 | Public `@lapismd/ai-host` MUST live at the repository root, publish built `dist` entrypoints for the root library, `./client`, `./file-tools`, `lapis-ai-host`, and `lapis-mcp-shim`, and expose `build`, `check`, and `test`. It MUST own acpx, agent-scoped model discovery, and standalone transport error propagation. Consumer plugins MUST NOT depend on it at runtime. `@lapis-notes/api` MAY depend on `./file-tools` only. Shared specification validation MUST remain a root-only npm development dependency. |
 | AH-PKG-002 | `@lapismd/ai-host` MUST own live local or authenticated-remote MCP transport through the official-SDK stdio shim, Streamable HTTP MCP, and token-authenticated broker. The `./file-tools` kernel MUST remain algorithm-only. The package MUST NOT become a durable tool, note-content, or conversation authority.                                                                                                                                                                                                       |
 | AH-PKG-003 | The `serve:local` package script MUST remain development-only. It MUST seed an ignored `.env` `LAPIS_AGENT_RUNTIME_TOKEN` when that file or key is missing, then start `lapis-ai-host serve` with that token. It MUST NOT add a public CLI subcommand or change production token generation.                                                                                                                                                                                                                            |
-| AH-PKG-004 | Release automation MUST use Changesets for future version pull requests, build and validate the selected npm tarball before publication, stop CI before publishing when the npm package is unregistered, use npm trusted publishing only after bootstrap through the `npm-production` environment, and create `ai-host@<version>` GitHub tags/releases from the verified release manifest.                                                                                                                              |
+| AH-PKG-004 | Release automation MUST use Changesets for future version pull requests, rebuild `dist`, build and validate the selected npm tarball before publication, stop CI before publishing when the npm package is unregistered, use npm trusted publishing only after bootstrap through the `npm-production` environment, and create `ai-host@<version>` GitHub tags/releases from the verified release manifest.                                                                                                              |
