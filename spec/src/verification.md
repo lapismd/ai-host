@@ -32,6 +32,7 @@
 | AH-ACP-007   | Implemented | Session-option tests append path-free sessionBootstrap with the skills manifest and omit path-bearing bootstrap text. |
 | AH-ACP-008   | Implemented | Executor deferred-start tests keep initialization out of the native response microtask queue, reserve a stable id, queue a prompt until initialization completes, cancel pending prompts, surface one sequenced startup error, and retain awaited-start behavior. |
 | AH-ACP-009   | Implemented | Executor deferred-prompt tests reserve a run id synchronously and prove the ACP turn starts only in a later event-loop task. |
+| AH-ACP-010   | Implemented | Executor restricted-session tests prove one-shot isolation, empty MCP projection, immediate permission rejection, and temporary-state cleanup; Lapis desktop forwarding is covered by its consumer tests. |
 | AH-MCP-001   | Implemented | `src/tool-bridge.test.ts` covers v3 bridge messages, reserved `lapis-tools`, token authorization, and disconnect cancellation. |
 | AH-MCP-002   | Implemented | `src/executor.test.ts` projects MCP servers with `type: stdio` and required stdio fields. |
 | AH-MCP-003   | Implemented | Executor tests project Cursor `lapis-tools` as `type: http` with loopback URL and bearer headers; tool-bridge tests list and call through Streamable HTTP. |

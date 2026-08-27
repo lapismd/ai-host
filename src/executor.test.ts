@@ -395,6 +395,53 @@ describe("agent runtime executor deferred ACP startup", () => {
 });
 
 describe("agent runtime MCP projection", () => {
+  it("removes workspace and MCP capabilities from restricted one-shot sessions", async () => {
+    let projected: Parameters<CreateAcpxRuntime>[2] | undefined;
+    const fake = createRuntime([]);
+    const ensureSession = vi.spyOn(fake.runtime, "ensureSession");
+    const close = vi.spyOn(fake.runtime, "close");
+    const executor = createAgentRuntimeExecutor({
+      createAcpxRuntime: async (_sink, _sessionId, payload) => {
+        projected = payload;
+        return fake.runtime;
+      },
+    });
+
+    const started = await executor.startAcpSession(sink, {
+      agent: "codex",
+      workspace: "/private/vault",
+      restricted: true,
+      mcpServers: [{ name: "external", command: "external-mcp" }],
+    });
+
+    expect(projected).toMatchObject({ restricted: true, mcpServers: [] });
+    expect(projected).not.toHaveProperty("workspace");
+    expect(ensureSession).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "oneshot", cwd: undefined }),
+    );
+    await executor.closeAcpSession(started.sessionId);
+    expect(close).toHaveBeenCalledWith({
+      handle: expect.any(Object),
+      reason: "close",
+      discardPersistentState: true,
+    });
+  });
+
+  it("does not allow a restricted session to resume persistent state", async () => {
+    const executor = createAgentRuntimeExecutor({
+      createAcpxRuntime: async () => {
+        throw new Error("runtime must not start");
+      },
+    });
+
+    await expect(
+      executor.startAcpSession(sink, {
+        restricted: true,
+        resumeSessionId: "stored-session",
+      }),
+    ).rejects.toThrow("cannot resume persistent state");
+  });
+
   it("converts environment records to ACP name/value entries", () => {
     expect(
       toAcpxMcpServers([

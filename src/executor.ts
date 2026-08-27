@@ -1,5 +1,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { resolveAcpAgent } from "./acp-agent";
 import type {
   NativeAgentProcessMessage,
@@ -56,6 +59,7 @@ export type AcpStartPayload = {
   mcpServers?: AcpMcpServer[];
   resumeSessionId?: string;
   appToolBridgeId?: string;
+  restricted?: boolean;
 };
 
 export type AcpMcpServer =
@@ -221,7 +225,10 @@ export function createAgentRuntimeExecutor(options?: {
   ): Promise<AcpSessionState> {
     const existing = acpSessions.get(sessionId);
     if (existing) {
-      if (existing.appToolBridgeId !== payload.appToolBridgeId) {
+      if (
+        existing.appToolBridgeId !== payload.appToolBridgeId ||
+        existing.restricted !== (payload.restricted === true)
+      ) {
         await existing.runtime.close({
           handle: existing.handle,
           reason: "app tool bridge changed",
@@ -238,7 +245,9 @@ export function createAgentRuntimeExecutor(options?: {
         return existing;
       }
     }
-    const effectivePayload = withAppToolMcpServer(payload, sink, toolBridges);
+    const effectivePayload = payload.restricted
+      ? restrictedAcpPayload(payload)
+      : withAppToolMcpServer(payload, sink, toolBridges);
     const agent = resolveAcpAgent(effectivePayload);
     const session = initialState ?? createAcpSessionState(sessionId, sink);
     session.sink = sink;
@@ -259,7 +268,7 @@ export function createAgentRuntimeExecutor(options?: {
     const handle = await runtime.ensureSession({
       sessionKey: sessionId,
       agent,
-      mode: "persistent",
+      mode: effectivePayload.restricted ? "oneshot" : "persistent",
       cwd: effectivePayload.workspace,
       sessionOptions: toAcpxSessionOptions(effectivePayload),
     });
@@ -292,6 +301,7 @@ export function createAgentRuntimeExecutor(options?: {
     session.handle = handle;
     session.connectionId = sink.connectionId;
     session.appToolBridgeId = effectivePayload.appToolBridgeId;
+    session.restricted = effectivePayload.restricted === true;
     acpSessions.set(sessionId, session);
     return session;
   }
@@ -663,6 +673,7 @@ type AcpSessionState = {
   nextSequence: number;
   connectionId?: string;
   appToolBridgeId?: string;
+  restricted: boolean;
 };
 
 type PendingAcpPrompt = {
@@ -688,12 +699,16 @@ function createAcpSessionState(
     nextSequence: 0,
     runtime: undefined as unknown as AcpxRuntimeLike,
     handle: undefined as unknown as AcpRuntimeHandle,
+    restricted: false,
   };
 }
 
 function resolveAcpSessionId(payload: AcpStartPayload): string {
   const sessionId = payload.sessionId?.trim();
   const resumeSessionId = payload.resumeSessionId?.trim();
+  if (payload.restricted && resumeSessionId) {
+    throw new Error("Restricted ACP sessions cannot resume persistent state.");
+  }
   if (sessionId && resumeSessionId && sessionId !== resumeSessionId) {
     throw new Error(
       "ACP sessionId must match resumeSessionId when both are provided.",
@@ -707,7 +722,11 @@ async function closeAcpSessionState(
   sessions: Map<string, AcpSessionState>,
   toolBridges: ToolBridgeBroker,
 ): Promise<void> {
-  await session.runtime.close({ handle: session.handle, reason: "close" });
+  await session.runtime.close({
+    handle: session.handle,
+    reason: "close",
+    discardPersistentState: session.restricted,
+  });
   sessions.delete(session.sessionId);
   if (session.connectionId && session.appToolBridgeId) {
     toolBridges.closeBridge(session.connectionId, session.appToolBridgeId);
@@ -783,8 +802,13 @@ export async function defaultCreateAcpxRuntime(
       "acpx/runtime is not available. Install acpx >= 0.8.0 on the AI host.",
     );
   }
-  const cwd = payload.workspace ?? process.cwd();
-  return acpx.createAcpRuntime({
+  const temporaryCwd = payload.restricted
+    ? await mkdtemp(join(tmpdir(), "lapis-acp-restricted-"))
+    : undefined;
+  const cwd = temporaryCwd ?? payload.workspace ?? process.cwd();
+  let runtime: AcpxRuntimeLike;
+  try {
+    runtime = acpx.createAcpRuntime({
     cwd,
     sessionStore: acpx.createRuntimeStore({
       stateDir: `${cwd}/.lapis/ai-sessions`,
@@ -797,6 +821,7 @@ export async function defaultCreateAcpxRuntime(
       inferredKind?: string;
       raw?: Record<string, unknown>;
     }) => {
+      if (payload.restricted) return { outcome: "reject_once" };
       const raw = request.raw ?? {};
       const toolCall =
         raw.toolCall && typeof raw.toolCall === "object"
@@ -829,6 +854,31 @@ export async function defaultCreateAcpxRuntime(
       });
     },
   });
+  } catch (error) {
+    if (temporaryCwd) {
+      await rm(temporaryCwd, { recursive: true, force: true });
+    }
+    throw error;
+  }
+  if (!temporaryCwd) return runtime;
+  const close = runtime.close.bind(runtime);
+  const ensureSession = runtime.ensureSession.bind(runtime);
+  runtime.ensureSession = async (input) => {
+    try {
+      return await ensureSession(input);
+    } catch (error) {
+      await rm(temporaryCwd, { recursive: true, force: true });
+      throw error;
+    }
+  };
+  runtime.close = async (input) => {
+    try {
+      await close(input);
+    } finally {
+      await rm(temporaryCwd, { recursive: true, force: true });
+    }
+  };
+  return runtime;
 }
 
 function requiredConnectionId(sink: AgentHostSink): string {
@@ -864,6 +914,18 @@ function withAppToolMcpServer(
   return {
     ...payload,
     mcpServers: [...(payload.mcpServers ?? []), appServer],
+  };
+}
+
+function restrictedAcpPayload(payload: AcpStartPayload): AcpStartPayload {
+  return {
+    ...(payload.sessionId ? { sessionId: payload.sessionId } : {}),
+    ...(payload.agent ? { agent: payload.agent } : {}),
+    ...(payload.model ? { model: payload.model } : {}),
+    ...(payload.thinking ? { thinking: payload.thinking } : {}),
+    ...(payload.metadata ? { metadata: payload.metadata } : {}),
+    restricted: true,
+    mcpServers: [],
   };
 }
 
