@@ -34,4 +34,6 @@ published validator without weakening the mapped-change policy.
 Tracked `AGENTS.md` is standing workflow: after a verified slice, commit with
 Jujutsu. Do not wait for a later user request. Its consumer guidance names Deno
 desktop, web, Storybook, and smoke supervisors; it does not authorize a second
-native desktop host.
+native desktop host. Its dependency guidance requires published LapisMD
+packages to resolve through npm semver ranges while source fixes stay owned by
+their source repositories.

@@ -41,22 +41,21 @@ pnpm build
 ```
 
 `pnpm build` writes publishable JavaScript and declarations to `dist/`. The
-published package exports built files only; consumer manifests must not depend
-on local `link:`, `file:`, or workspace-only paths.
+published package exports built files only; consumer manifests must use
+portable registry dependency ranges rather than checkout-specific paths.
 
 ## Release
 
-`@lapismd/ai-host@0.1.0` is the manual npm bootstrap release. Prepare and review
-the tarball with:
+`@lapismd/ai-host@0.1.0` was manually bootstrapped from a reviewed tarball.
+Prepare and review future release artifacts with:
 
 ```sh
 pnpm release:plan --registry https://registry.npmjs.org
 pnpm packages:pack
 ```
 
-The first publish is performed manually from the reviewed tarball. Future
-versions use Changesets version PRs and npm trusted publishing from
-`.github/workflows/release.yml` after the package exists on npm and the
-`npm-production` trusted publisher is configured.
+Future versions use Changesets version PRs and npm trusted publishing from
+`.github/workflows/release.yml` after the `npm-production` trusted publisher is
+configured.
 
 Canonical requirements live in [`spec/src`](./spec/src).
