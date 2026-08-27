@@ -12,10 +12,15 @@ algorithms only. The stdio MCP projection launches the package-owned
 `bin/lapis-mcp-shim.mjs` entrypoint in both source and built consumers; that
 stable launcher delegates to the generated shim bundle.
 
+Specification validation is root-only development tooling. The root manifest
+MUST consume the published `@lapismd/spec-validator` package from npm once that
+package exists; local `link:` or `file:` resolution for the validator is not
+part of the package architecture or consumer contract.
+
 ## Requirements
 
 | ID         | Requirement                                                                                                                                                                                                                                                                                                                                 |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AH-PKG-001 | Private `@lapismd/ai-host` MUST live at the repository root, expose `build`, `check`, `test`, a `lapis-ai-host` CLI, and a `./file-tools` leaf. It MUST own acpx, agent-scoped model discovery, and standalone transport error propagation. Consumer plugins MUST NOT depend on it at runtime. `@lapis-notes/api` MAY depend on `./file-tools` only. |
+| AH-PKG-001 | Private `@lapismd/ai-host` MUST live at the repository root, expose `build`, `check`, `test`, a `lapis-ai-host` CLI, and a `./file-tools` leaf. It MUST own acpx, agent-scoped model discovery, and standalone transport error propagation. Consumer plugins MUST NOT depend on it at runtime. `@lapis-notes/api` MAY depend on `./file-tools` only. Shared specification validation MUST remain a root-only npm development dependency. |
 | AH-PKG-002 | `@lapismd/ai-host` MUST own live local or authenticated-remote MCP transport through the official-SDK stdio shim, Streamable HTTP MCP, and token-authenticated broker. The `./file-tools` kernel MUST remain algorithm-only. The package MUST NOT become a durable tool, note-content, or conversation authority. |
 | AH-PKG-003 | The `serve:local` package script MUST remain development-only. It MUST seed an ignored `.env` `LAPIS_AGENT_RUNTIME_TOKEN` when that file or key is missing, then start `lapis-ai-host serve` with that token. It MUST NOT add a public CLI subcommand or change production token generation.                                              |

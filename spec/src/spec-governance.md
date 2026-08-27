@@ -25,6 +25,12 @@ MUST update the mapped chapter in the same Jujutsu change.
 | `package.json`, `src/index.ts`, `bin/`, `scripts/` | `architecture.md` |
 | `spec-validator.config.mjs`, `AGENTS.md`, `pnpm-workspace.yaml`, `spec/book.toml` | `spec-governance.md` |
 
+The repository-owned validator configuration and pnpm workspace file remain
+governance inputs, but `@lapismd/spec-validator` itself is consumed as the
+published npm package when available. Removing a local validator override MUST
+keep this chapter in the same change so future spec gates exercise the
+published validator without weakening the mapped-change policy.
+
 Tracked `AGENTS.md` is standing workflow: after a verified slice, commit with
 Jujutsu. Do not wait for a later user request. Its consumer guidance names Deno
 desktop, web, Storybook, and smoke supervisors; it does not authorize a second

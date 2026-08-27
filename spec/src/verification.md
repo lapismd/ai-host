@@ -6,8 +6,8 @@
 | AH-GOV-002   | Implemented | `pnpm spec:first` maps protected changes to canonical chapters. |
 | AH-GOV-003   | Implemented | `pnpm spec:validate` enforces unique definitions and one verification row per ID. |
 | AH-GOV-004   | Implemented | `docs/HISTORY_MIGRATION.md` records the extraction and audit. |
-| AH-GOV-005   | Implemented | Focused path classification in `spec-validator.config.mjs`. |
-| AH-PKG-001   | Implemented | Root `package.json` names `@lapismd/ai-host` and exposes `build`, `check`, `test`, `lapis-ai-host`, and `./file-tools`. |
+| AH-GOV-005   | Implemented | Focused path classification in `spec-validator.config.mjs`; root pnpm workspace policy no longer overrides the published validator package. |
+| AH-PKG-001   | Implemented | Root `package.json` names `@lapismd/ai-host`, exposes `build`, `check`, `test`, `lapis-ai-host`, and `./file-tools`, and resolves `@lapismd/spec-validator` as an npm development dependency. |
 | AH-PKG-002   | Implemented | `src/mcp-shim.ts` and `src/tool-bridge.ts` own the stdio shim, Streamable HTTP MCP, and broker; `src/file-tools` stays algorithm-only. |
 | AH-FT-001    | Implemented | `package.json` publishes `./file-tools`; the leaf and its isolation test import no MCP, acpx, or transport modules. |
 | AH-FT-002    | Implemented | File-tools tests accept `{ path, content }` write plans and leave path checks to the caller. |
