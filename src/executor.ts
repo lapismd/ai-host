@@ -293,7 +293,10 @@ export function createAgentRuntimeExecutor(options?: {
       agent,
       thinking: effectivePayload.thinking,
     });
-    if (thinking && (await supportsThinkingConfiguration(runtime, handle))) {
+    const thinkingKey = thinking
+      ? await thinkingConfigurationKey(runtime, handle)
+      : undefined;
+    if (thinking && thinkingKey) {
       try {
         if (!runtime.setConfigOption) {
           throw new Error(
@@ -302,7 +305,7 @@ export function createAgentRuntimeExecutor(options?: {
         }
         await runtime.setConfigOption({
           handle,
-          key: "thinking",
+          key: thinkingKey,
           value: thinking,
         });
       } catch (error) {
@@ -871,17 +874,15 @@ function isUnsupportedAcpControl(error: unknown): boolean {
   );
 }
 
-async function supportsThinkingConfiguration(
+async function thinkingConfigurationKey(
   runtime: AcpxRuntimeLike,
   handle: AcpRuntimeHandle,
-): Promise<boolean> {
-  if (!runtime.getCapabilities) return true;
+): Promise<string | undefined> {
+  if (!runtime.getCapabilities) return "thinking";
   const capabilities = await runtime.getCapabilities({ handle });
   const keys = capabilities.configOptionKeys ?? [];
-  return (
-    keys.includes("thinking") ||
-    keys.includes("effort") ||
-    keys.includes("reasoning_effort")
+  return ["thinking", "effort", "reasoning_effort"].find((key) =>
+    keys.includes(key),
   );
 }
 

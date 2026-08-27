@@ -63,7 +63,7 @@ describe("agent runtime executor ACP thinking", () => {
 
     expect(fake.setConfigOption).toHaveBeenCalledWith({
       handle: expect.any(Object),
-      key: "thinking",
+      key: "effort",
       value: "high",
     });
     await executor.closeAcpSession(result.sessionId);
