@@ -93,6 +93,22 @@ export type AcpModelCatalog = {
   entries: AcpModelEntry[];
 };
 
+export type AcpConfigurationFieldResult = {
+  status: "applied" | "unchanged" | "unsupported";
+  reason?: string;
+};
+
+export type AcpConfigurePayload = {
+  sessionId: string;
+  model?: { provider?: string; model?: string };
+  thinking?: "off" | "low" | "medium" | "high";
+};
+
+export type AcpConfigureResult = {
+  model?: AcpConfigurationFieldResult;
+  thinking?: AcpConfigurationFieldResult;
+};
+
 export type { AcpModelEntry } from "./acp-model-catalog";
 
 type AcpRuntimeHandle = {
@@ -183,6 +199,7 @@ export type AgentRuntimeExecutor = {
     sessionId: string,
     text: string,
   ): { runId: string };
+  configureAcpSession(payload: AcpConfigurePayload): Promise<AcpConfigureResult>;
   cancelAcpSession(sessionId: string): Promise<void>;
   closeAcpSession(sessionId: string): Promise<void>;
   respondAcpSession(
@@ -592,6 +609,87 @@ export function createAgentRuntimeExecutor(options?: {
       return { runId };
     },
 
+    async configureAcpSession(payload) {
+      const pending = pendingAcpSessions.get(payload.sessionId);
+      const session = acpSessions.get(payload.sessionId) ?? (await pending?.ready);
+      if (!session) throw new Error(`Unknown ACP session: ${payload.sessionId}`);
+      const runtime = session.runtime;
+      const keys = runtime.getCapabilities
+        ? (await runtime.getCapabilities({ handle: session.handle }))
+            .configOptionKeys ?? []
+        : [];
+      const result: AcpConfigureResult = {};
+
+      const requestedModel = payload.model?.model?.trim();
+      if (requestedModel) {
+        const currentModel = runtime.getStatus
+          ? (await runtime.getStatus({ handle: session.handle })).models
+              ?.currentModelId
+          : undefined;
+        if (currentModel === requestedModel) {
+          result.model = { status: "unchanged" };
+        } else if (!keys.includes("model") || !runtime.setConfigOption) {
+          result.model = {
+            status: "unsupported",
+            reason: "The ACP session does not advertise model configuration.",
+          };
+        } else {
+          try {
+            await runtime.setConfigOption({
+              handle: session.handle,
+              key: "model",
+              value: requestedModel,
+            });
+            const effectiveModel = runtime.getStatus
+              ? (await runtime.getStatus({ handle: session.handle })).models
+                  ?.currentModelId
+              : undefined;
+            result.model =
+              effectiveModel === requestedModel
+                ? { status: "applied" }
+                : {
+                    status: "unsupported",
+                    reason: "The ACP session did not verify the requested model.",
+                  };
+          } catch (error) {
+            result.model = {
+              status: "unsupported",
+              reason: error instanceof Error ? error.message : String(error),
+            };
+          }
+        }
+      }
+
+      if (payload.thinking) {
+        const thinkingKey = ["thinking", "effort", "reasoning_effort"].find(
+          (key) => keys.includes(key),
+        );
+        if (!thinkingKey || !runtime.setConfigOption) {
+          result.thinking = {
+            status: "unsupported",
+            reason: "The ACP session does not advertise thinking configuration.",
+          };
+        } else {
+          try {
+            await runtime.setConfigOption({
+              handle: session.handle,
+              key: thinkingKey,
+              value: toAcpxThinkingValue({
+                thinking: payload.thinking,
+              })!,
+            });
+            result.thinking = { status: "applied" };
+          } catch (error) {
+            result.thinking = {
+              status: "unsupported",
+              reason: error instanceof Error ? error.message : String(error),
+            };
+          }
+        }
+      }
+      return result;
+    },
+
     async cancelAcpSession(sessionId) {
       const session = acpSessions.get(sessionId);
       if (session) {
@@ -780,7 +878,11 @@ async function supportsThinkingConfiguration(
   if (!runtime.getCapabilities) return true;
   const capabilities = await runtime.getCapabilities({ handle });
   const keys = capabilities.configOptionKeys ?? [];
-  return keys.includes("thinking") || keys.includes("effort");
+  return (
+    keys.includes("thinking") ||
+    keys.includes("effort") ||
+    keys.includes("reasoning_effort")
+  );
 }
 
 export async function defaultCreateAcpxRuntime(

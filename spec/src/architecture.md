@@ -11,6 +11,10 @@ consuming application. The file-tools leaf supplies schemas and apply
 algorithms only. The stdio MCP projection launches the package-owned
 `bin/lapis-mcp-shim.mjs` entrypoint in both source and built consumers; that
 stable launcher delegates to the generated shim bundle.
+Protocol-v4 session configuration preserves that boundary: consumers request
+provider-neutral model or thinking values, while the executor selects
+advertised acpx keys and returns verified field results without exposing the
+native handle.
 
 Specification validation is root-only development tooling. The root manifest
 MUST consume the published `@lapismd/spec-validator` package from npm once that

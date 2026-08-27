@@ -22,7 +22,7 @@ export type NativeAgentRuntimeEvent = {
   event: NativeAgentRuntimeEventPayload;
 };
 
-export const AGENT_RUNTIME_PROTOCOL = 3;
+export const AGENT_RUNTIME_PROTOCOL = 4;
 export const MIN_AGENT_RUNTIME_PROTOCOL = 2;
 export const HELLO_TIMEOUT_MS = 5_000;
 export const AUTH_CLOSE_CODE = 4401;
@@ -33,6 +33,7 @@ export const AGENT_RUNTIME_COMMANDS = [
   "desktop_agent_acp_start",
   "desktop_agent_acp_models",
   "desktop_agent_acp_prompt",
+  "desktop_agent_acp_configure",
   "desktop_agent_runtime_subscribe",
   "desktop_agent_acp_cancel",
   "desktop_agent_acp_close",

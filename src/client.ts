@@ -397,6 +397,11 @@ export function createAgentRuntimeBridge(
         "Application tools require an agent host with protocol v3 support.",
       );
     }
+    if (command === "desktop_agent_acp_configure" && negotiatedProtocol < 4) {
+      throw new Error(
+        "Agent session configuration requires a host with protocol v4 support.",
+      );
+    }
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       throw new Error("Agent-runtime socket is not open");
     }

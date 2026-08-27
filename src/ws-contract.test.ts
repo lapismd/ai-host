@@ -22,6 +22,7 @@ import type { ToolBridgeBrokerOptions } from "./tool-bridge";
 
 function createFakeAcpx(): CreateAcpxRuntime {
   return async (sink, sessionId, payload, pendingApprovals) => {
+    let currentModel = payload.agent === "cursor" ? "composer" : "gpt-test";
     const runtime: AcpxRuntimeLike = {
       async ensureSession(input) {
         return { sessionKey: input.sessionKey, backend: input.agent };
@@ -54,8 +55,7 @@ function createFakeAcpx(): CreateAcpxRuntime {
       async getStatus() {
         return {
           models: {
-            currentModelId:
-              payload.agent === "cursor" ? "composer" : "gpt-test",
+            currentModelId: currentModel,
             availableModelIds:
               payload.agent === "cursor"
                 ? ["composer", "composer-fast"]
@@ -63,7 +63,12 @@ function createFakeAcpx(): CreateAcpxRuntime {
           },
         };
       },
-      async setConfigOption() {},
+      getCapabilities() {
+        return { configOptionKeys: ["model", "thinking"] };
+      },
+      async setConfigOption({ key, value }) {
+        if (key === "model") currentModel = value;
+      },
       async cancel() {},
       async close() {},
     };
@@ -256,6 +261,17 @@ describe("agent-runtime websocket contract", () => {
       },
     );
     expect(sessionId).toBeTruthy();
+
+    await expect(
+      bridge.invoke("desktop_agent_acp_configure", {
+        sessionId,
+        model: { provider: "cursor", model: "composer-fast" },
+        thinking: "medium",
+      }),
+    ).resolves.toEqual({
+      model: { status: "applied" },
+      thinking: { status: "applied" },
+    });
 
     await expect(
       bridge.invoke("desktop_agent_acp_models", { agent: "cursor" }),

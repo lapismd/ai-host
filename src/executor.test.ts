@@ -70,6 +70,76 @@ describe("agent runtime executor ACP thinking", () => {
   });
 });
 
+describe("agent runtime executor ACP configuration", () => {
+  it("applies and verifies model plus the advertised thinking alias", async () => {
+    let currentModel = "gpt-first";
+    const fake = createRuntime(["model", "reasoning_effort"]);
+    fake.runtime.getStatus = async () => ({
+      models: { currentModelId: currentModel },
+    });
+    fake.runtime.setConfigOption = vi.fn(async ({ key, value }) => {
+      if (key === "model") currentModel = value;
+    });
+    const executor = createAgentRuntimeExecutor({
+      createAcpxRuntime: async () => fake.runtime,
+    });
+    const { sessionId } = await executor.startAcpSession(sink, {
+      agent: "codex",
+      model: { model: "gpt-first" },
+    });
+
+    await expect(
+      executor.configureAcpSession({
+        sessionId,
+        model: { provider: "codex", model: "gpt-second" },
+        thinking: "high",
+      }),
+    ).resolves.toEqual({
+      model: { status: "applied" },
+      thinking: { status: "applied" },
+    });
+    expect(fake.runtime.setConfigOption).toHaveBeenCalledWith({
+      handle: expect.any(Object),
+      key: "model",
+      value: "gpt-second",
+    });
+    expect(fake.runtime.setConfigOption).toHaveBeenCalledWith({
+      handle: expect.any(Object),
+      key: "reasoning_effort",
+      value: "high",
+    });
+    await executor.closeAcpSession(sessionId);
+  });
+
+  it("returns structured unsupported results without closing the session", async () => {
+    const fake = createRuntime([]);
+    fake.runtime.getStatus = async () => ({
+      models: { currentModelId: "gpt-first" },
+    });
+    const executor = createAgentRuntimeExecutor({
+      createAcpxRuntime: async () => fake.runtime,
+    });
+    const { sessionId } = await executor.startAcpSession(sink, {
+      agent: "codex",
+    });
+
+    await expect(
+      executor.configureAcpSession({
+        sessionId,
+        model: { model: "gpt-second" },
+        thinking: "medium",
+      }),
+    ).resolves.toMatchObject({
+      model: { status: "unsupported" },
+      thinking: { status: "unsupported" },
+    });
+    await expect(
+      executor.promptAcpSession(sink, sessionId, "still usable"),
+    ).resolves.toHaveProperty("runId");
+    await executor.closeAcpSession(sessionId);
+  });
+});
+
 describe("agent runtime executor ACP model catalogs", () => {
   it("keeps Cursor models when backend session close is unsupported", async () => {
     const fake = createRuntime(["mode", "model"]);

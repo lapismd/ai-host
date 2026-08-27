@@ -248,6 +248,20 @@ async function dispatchCommand(
         String(payload.sessionId ?? ""),
         String(payload.text ?? ""),
       );
+    case "desktop_agent_acp_configure":
+      return executor.configureAcpSession({
+        sessionId: String(payload.sessionId ?? ""),
+        model:
+          payload.model && typeof payload.model === "object"
+            ? (payload.model as { provider?: string; model?: string })
+            : undefined,
+        thinking: payload.thinking as
+          | "off"
+          | "low"
+          | "medium"
+          | "high"
+          | undefined,
+      });
     case "desktop_agent_acp_cancel":
       await executor.cancelAcpSession(String(payload.sessionId ?? ""));
       return null;
