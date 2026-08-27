@@ -108,6 +108,7 @@ export function createAgentRuntimeBridge(
       protocolVersion: String(AGENT_RUNTIME_PROTOCOL),
       transport: "websocket",
       appTools: "stdio-mcp",
+      sessionConfiguration: "configure",
     },
   };
 
@@ -285,6 +286,8 @@ export function createAgentRuntimeBridge(
           );
           agentRuntimeCapability.details.appTools =
             negotiatedProtocol >= 3 ? "stdio-mcp" : "unavailable";
+          agentRuntimeCapability.details.sessionConfiguration =
+            negotiatedProtocol >= 4 ? "configure" : "unavailable";
           next.removeEventListener("message", onHandshake);
           next.addEventListener("message", (later) => {
             handleFrame(String(later.data));

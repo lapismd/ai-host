@@ -235,6 +235,10 @@ describe("agent-runtime websocket contract", () => {
         agent: "codex",
         models: ["gpt-test"],
       });
+      expect(
+        bridge.capabilities["agent-runtime"]?.details
+          ?.sessionConfiguration,
+      ).toBe("configure");
     } finally {
       bridge.dispose();
     }
