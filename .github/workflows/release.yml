@@ -1,0 +1,271 @@
+name: Release public package
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-host-public-release
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Update Version Packages pull request
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      has_changesets: ${{ steps.changesets.outputs.hasChangesets || 'false' }}
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install mdBook
+        uses: taiki-e/install-action@v2
+        with:
+          tool: mdbook@0.5.4
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create or update Version Packages pull request
+        id: changesets
+        if: github.event_name == 'push'
+        uses: changesets/action@v1.8.0
+        with:
+          version: pnpm release:version
+          commit: Version public packages
+          title: Version Packages
+          commitMode: github-api
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  artifact:
+    name: Build verified release artifact
+    needs: version
+    if: needs.version.outputs.has_changesets != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      artifact_name: ${{ steps.mode.outputs.artifact_name }}
+      bootstrap_required: ${{ steps.mode.outputs.bootstrap_required }}
+      package_count: ${{ steps.mode.outputs.package_count }}
+      should_publish: ${{ steps.mode.outputs.should_publish }}
+    steps:
+      - name: Check out the release commit
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install mdBook
+        uses: taiki-e/install-action@v2
+        with:
+          tool: mdbook@0.5.4
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Require the canonical repository
+        run: test "$GITHUB_REPOSITORY" = "lapismd/ai-host"
+
+      - name: Revalidate release source
+        run: |
+          pnpm spec:check
+          pnpm release:check
+          pnpm packages:pack
+          pnpm checks:release
+
+      - name: Plan exact unpublished version
+        run: pnpm release:plan
+
+      - name: Select protected publication mode
+        id: mode
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from "node:fs";
+          const plan = JSON.parse(readFileSync(".release/release-plan.json", "utf8"));
+          if (process.env.GITHUB_REF !== "refs/heads/main") {
+            throw new Error("Releases must run from refs/heads/main");
+          }
+          const shouldPublish = plan.selected.length > 0 && !plan.bootstrapRequired;
+          const output = [
+            `artifact_name=ai-host-release-${process.env.GITHUB_SHA}`,
+            `bootstrap_required=${plan.bootstrapRequired}`,
+            `package_count=${plan.selected.length}`,
+            `should_publish=${shouldPublish}`,
+          ].join("\n");
+          appendFileSync(process.env.GITHUB_OUTPUT, `${output}\n`);
+          if (plan.bootstrapRequired && plan.selected.length > 0) {
+            console.log("::notice::Initial AI Host publication requires manual npm publication from the verified release artifact.");
+          }
+          NODE
+
+      - name: Prepare immutable package tarball
+        if: steps.mode.outputs.package_count != '0'
+        run: pnpm release:prepare
+
+      - name: Upload verified release artifact
+        if: steps.mode.outputs.package_count != '0'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.mode.outputs.artifact_name }}
+          path: |
+            .release/release-manifest.json
+            .release/tarballs/*.tgz
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-production:
+    name: Publish with npm trusted publishing
+    needs: artifact
+    if: >-
+      needs.artifact.outputs.should_publish == 'true' &&
+      needs.artifact.outputs.bootstrap_required == 'false'
+    runs-on: ubuntu-latest
+    environment:
+      name: npm-production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out the release commit
+        uses: actions/checkout@v5
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies and current npm
+        run: |
+          pnpm install --frozen-lockfile
+          npm install --global npm@12.0.2
+
+      - name: Download verified tarball
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.artifact.outputs.artifact_name }}
+          path: .release
+
+      - name: Publish exact verified tarball
+        env:
+          AI_HOST_RELEASE_APPROVED: "1"
+        run: pnpm release:publish .release/release-manifest.json
+
+  verify:
+    name: Verify installed package and provenance
+    needs:
+      - artifact
+      - publish-production
+    if: >-
+      always() &&
+      needs.artifact.outputs.should_publish == 'true' &&
+      needs.publish-production.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the release commit
+        uses: actions/checkout@v5
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies and current npm
+        run: |
+          pnpm install --frozen-lockfile
+          npm install --global npm@12.0.2
+
+      - name: Download verified release manifest
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.artifact.outputs.artifact_name }}
+          path: .release
+
+      - name: Verify clean install, integrity, and provenance
+        run: >-
+          pnpm release:verify
+          .release/release-manifest.json
+          .release/npm-signatures.json
+
+      - name: Retain npm signature evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: npm-signatures-${{ github.sha }}
+          path: .release/npm-signatures.json
+          if-no-files-found: warn
+          retention-days: 90
+
+  notes:
+    name: Create package tag and GitHub release
+    needs:
+      - artifact
+      - verify
+    if: needs.verify.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the release commit
+        uses: actions/checkout@v5
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download verified release manifest
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.artifact.outputs.artifact_name }}
+          path: .release
+
+      - name: Create retry-safe package release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm release:notes .release/release-manifest.json

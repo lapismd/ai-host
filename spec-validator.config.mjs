@@ -58,7 +58,8 @@ export default defineConfig(tableRequirements(), {
           chapters: ["spec/src/protocol.md"],
         },
         {
-          pattern: "^src/(?:executor|acp-agent|acp-session-options|acp-model-catalog)\\.ts$",
+          pattern:
+            "^src/(?:executor|acp-agent|acp-session-options|acp-model-catalog)\\.ts$",
           chapters: ["spec/src/executor.md"],
         },
         {
@@ -70,17 +71,18 @@ export default defineConfig(tableRequirements(), {
           chapters: ["spec/src/file-tools.md"],
         },
         {
-          pattern: "^(?:package\\.json$|src/index\\.ts$|bin/|scripts/)",
+          pattern:
+            "^(?:package\\.json$|src/index\\.ts$|bin/|scripts/|\\.changeset/|\\.github/workflows/|CHANGELOG\\.md$|LICENSE\\.md$|README\\.md$)",
           chapters: ["spec/src/architecture.md"],
         },
         {
           pattern:
-            "^(?:spec-validator\\.config\\.mjs$|AGENTS\\.md$|pnpm-workspace\\.yaml$|spec/book\\.toml$)",
+            "^(?:spec-validator\\.config\\.mjs$|AGENTS\\.md$|pnpm-workspace\\.yaml$|spec/book\\.toml$|\\.gitignore$)",
           chapters: ["spec/src/spec-governance.md"],
         },
       ],
       protected: [
-        "^(?:src/|package\\.json$|bin/|scripts/|spec-validator\\.config\\.mjs$|AGENTS\\.md$|pnpm-workspace\\.yaml$)",
+        "^(?:src/|package\\.json$|bin/|scripts/|\\.changeset/|\\.github/workflows/|CHANGELOG\\.md$|LICENSE\\.md$|README\\.md$|\\.gitignore$|spec-validator\\.config\\.mjs$|AGENTS\\.md$|pnpm-workspace\\.yaml$)",
       ],
     },
   },
