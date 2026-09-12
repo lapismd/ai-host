@@ -4,6 +4,11 @@ The standalone host speaks the existing agent-runtime WebSocket protocol. The
 CLI owns process bind and token policy. The library MAY generate a token when
 callers omit one and MUST print that token once.
 
+ACP permission requests remain security decisions. General conversational
+questions continue as normal assistant text and a later user message starts a
+new turn in the same session. Typed structured elicitation is a separate,
+deferred protocol capability.
+
 ## Requirements
 
 | ID           | Requirement                                                                                                                                                                                                                                                                                                                                                                                                                   |
@@ -17,3 +22,4 @@ callers omit one and MUST print that token once.
 | AH-PROTO-002 | Protocol v4 MUST add `desktop_agent_acp_configure` for an existing session while preserving older command behavior. Clients MUST reject configuration when negotiation is below v4, advertise `sessionConfiguration: configure` only after v4 negotiation, and expose the same command, capability detail, and structured result through embedded and standalone WebSocket hosts.                                             |
 | AH-PROTO-003 | Protocol v4 hosts MAY add agent discovery and session-status commands. The controller profile MUST reject raw process commands and caller MCP definitions, fix sessions to the configured workspace, and permit only registered ACP, replay, permission and application-tool commands.                                                                                                                                        |
 | AH-PROTO-004 | The public client MUST support opt-in manual runtime-event acknowledgement with restored replay cursors. It MUST deduplicate received frames separately from persisted cursors, reject acknowledgements beyond received sequence, and preserve automatic acknowledgement as the compatibility default.                                                                                                                        |
+| AH-PROTO-005 | Structured user elicitation MUST NOT be represented as or answered through an ACP permission request. A future implementation MUST negotiate a distinct typed interaction capability and define request identity, schema validation, expiry, cancellation, reconnect, response, and compatibility behavior before `ai-host` exposes it.                                                                                       |
