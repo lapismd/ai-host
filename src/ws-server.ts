@@ -21,7 +21,24 @@ export type AgentRuntimeServerOptions = {
   origins?: string[];
   executor: AgentRuntimeExecutor;
   handshakeTimeoutMs?: number;
+  profile?: "trusted" | "controller";
 };
+
+const CONTROLLER_COMMANDS = new Set([
+  "desktop_agent_acp_agents",
+  "desktop_agent_acp_models",
+  "desktop_agent_acp_start",
+  "desktop_agent_acp_prompt",
+  "desktop_agent_acp_configure",
+  "desktop_agent_acp_status",
+  "desktop_agent_runtime_subscribe",
+  "desktop_agent_acp_cancel",
+  "desktop_agent_acp_close",
+  "desktop_agent_acp_respond",
+  "desktop_agent_tools_open",
+  "desktop_agent_tools_respond",
+  "desktop_agent_tools_close",
+]);
 
 export type AgentRuntimeServer = {
   port: number;
@@ -151,6 +168,18 @@ async function handleMessage(
   }
 
   if (!isCommandRequest(parsed)) return;
+  if (
+    options.profile === "controller" &&
+    !CONTROLLER_COMMANDS.has(parsed.command)
+  ) {
+    sendJson(socket, {
+      id: parsed.id,
+      error: {
+        message: `Command unavailable in controller profile: ${parsed.command}`,
+      },
+    });
+    return;
+  }
   const sink: AgentHostSink = {
     connectionId,
     sendRuntimeEvent(event) {
@@ -215,10 +244,24 @@ async function dispatchCommand(
         workspace: options.workspace,
         agent: String(payload.agent ?? ""),
       });
+    case "desktop_agent_acp_agents":
+      return executor.listAcpAgents();
+    case "desktop_agent_acp_status":
+      return executor.getAcpSessionStatus(String(payload.sessionId ?? ""));
     case "desktop_agent_acp_start":
+      if (
+        options.profile === "controller" &&
+        Array.isArray(payload.mcpServers) &&
+        payload.mcpServers.length > 0
+      ) {
+        throw new Error(
+          "Controller profile does not accept caller MCP servers",
+        );
+      }
       return executor.startAcpSession(sink, {
         ...payload,
         workspace: options.workspace,
+        ...(options.profile === "controller" ? { mcpServers: [] } : {}),
       });
     case "desktop_agent_tools_open":
       return executor.openToolBridge(sink, {
@@ -256,11 +299,7 @@ async function dispatchCommand(
             ? (payload.model as { provider?: string; model?: string })
             : undefined,
         thinking: payload.thinking as
-          | "off"
-          | "low"
-          | "medium"
-          | "high"
-          | undefined,
+          "off" | "low" | "medium" | "high" | undefined,
       });
     case "desktop_agent_acp_cancel":
       await executor.cancelAcpSession(String(payload.sessionId ?? ""));

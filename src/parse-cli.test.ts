@@ -17,6 +17,7 @@ describe("parseServeArgs", () => {
         workspace: DEFAULT_SERVE_WORKSPACE,
         token: "secret-token",
         origins: [],
+        profile: "trusted",
       },
     });
   });
@@ -68,6 +69,21 @@ describe("parseServeArgs", () => {
         workspace: "./tmp/agents",
         origins: ["http://localhost:7010"],
       },
+    });
+  });
+
+  it("accepts the controller profile and an agent registry path", () => {
+    expect(
+      parseServeArgs([
+        "serve",
+        "--profile",
+        "controller",
+        "--agent-config",
+        "./agents.json",
+      ]).args,
+    ).toMatchObject({
+      profile: "controller",
+      agentConfig: "./agents.json",
     });
   });
 });

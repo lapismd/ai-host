@@ -1,4 +1,12 @@
-export { resolveAcpAgent, type DesktopAcpAgent } from "./acp-agent";
+export {
+  createAcpAgentRegistry,
+  DEFAULT_ACP_AGENTS,
+  parseAcpAgentDefinitions,
+  resolveAcpAgent,
+  type AcpAgentDefinition,
+  type AcpAgentMcpTransport,
+  type AcpAgentRegistry,
+} from "./acp-agent";
 export {
   toAcpxSessionOptions,
   toAcpxThinkingValue,
@@ -14,13 +22,16 @@ export {
   type AcpConfigureResult,
   type AcpConfigurationFieldResult,
   type AcpModelCatalog,
+  type AcpAgentCatalogEntry,
   type AcpModelEntry,
   type AcpMcpServer,
   type AcpStartPayload,
+  type AcpSessionStatus,
   type AgentHostSink,
   type AgentRuntimeInputSink,
   type AgentRuntimeExecutor,
   type CreateAcpxRuntime,
+  type CreateAcpxRuntimeContext,
   type SpawnPayload,
 } from "./executor";
 export {

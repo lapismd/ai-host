@@ -1,5 +1,6 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { createAcpAgentRegistry, parseAcpAgentDefinitions } from "./acp-agent";
 import { createAgentRuntimeExecutor } from "./executor";
 import type { ServeArgs } from "./parse-cli";
 import { generateToken } from "./token";
@@ -30,6 +31,15 @@ export async function serveAgentHost(
 
   const workspace = resolve(args.workspace);
   await mkdir(workspace, { recursive: true });
+  const agentRegistry = args.agentConfig
+    ? createAcpAgentRegistry(
+        parseAcpAgentDefinitions(
+          JSON.parse(
+            await readFile(resolve(args.agentConfig), "utf8"),
+          ) as unknown,
+        ),
+      )
+    : undefined;
 
   const server: AgentRuntimeServer = await startAgentRuntimeServer({
     port: args.port,
@@ -37,7 +47,12 @@ export async function serveAgentHost(
     token,
     workspace,
     origins: args.origins,
-    executor: options?.executor ?? createAgentRuntimeExecutor(),
+    executor:
+      options?.executor ??
+      createAgentRuntimeExecutor({
+        ...(agentRegistry ? { agentRegistry } : {}),
+      }),
+    profile: args.profile ?? "trusted",
   });
 
   const url = `ws://${args.bind}:${server.port}`;

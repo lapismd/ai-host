@@ -22,6 +22,7 @@ describe("serveAgentHost", () => {
         bind: "127.0.0.1",
         workspace,
         origins: [],
+        profile: "trusted",
       },
       {
         executor: createAgentRuntimeExecutor({

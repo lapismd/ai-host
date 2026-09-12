@@ -10,6 +10,8 @@ export type ServeArgs = {
   workspace: string;
   token?: string;
   origins: string[];
+  profile?: "trusted" | "controller";
+  agentConfig?: string;
 };
 
 export type ParsedCli =
@@ -25,7 +27,8 @@ export function parseServeArgs(argv: string[]): ParsedCli {
   if (command !== "serve") {
     return {
       ok: false,
-      error: "Usage: lapis-ai-host serve [--port 7345] [--bind 127.0.0.1] [--workspace <path>] [--token <token>] [--origin <url>]",
+      error:
+        "Usage: lapis-ai-host serve [--port 7345] [--bind 127.0.0.1] [--workspace <path>] [--token <token>] [--origin <url>]",
     };
   }
 
@@ -34,6 +37,7 @@ export function parseServeArgs(argv: string[]): ParsedCli {
     bind: DEFAULT_SERVE_BIND,
     workspace: DEFAULT_SERVE_WORKSPACE,
     origins: [],
+    profile: "trusted",
   };
 
   for (let index = 0; index < rest.length; index += 1) {
@@ -55,7 +59,8 @@ export function parseServeArgs(argv: string[]): ParsedCli {
       continue;
     }
     if (flag === "--workspace") {
-      if (!value) return { ok: false, error: "serve --workspace requires a path" };
+      if (!value)
+        return { ok: false, error: "serve --workspace requires a path" };
       args.workspace = value;
       index += 1;
       continue;
@@ -74,13 +79,33 @@ export function parseServeArgs(argv: string[]): ParsedCli {
       index += 1;
       continue;
     }
+    if (flag === "--profile") {
+      if (value !== "trusted" && value !== "controller") {
+        return {
+          ok: false,
+          error: "serve --profile must be trusted or controller",
+        };
+      }
+      args.profile = value;
+      index += 1;
+      continue;
+    }
+    if (flag === "--agent-config") {
+      if (!value) {
+        return { ok: false, error: "serve --agent-config requires a path" };
+      }
+      args.agentConfig = value;
+      index += 1;
+      continue;
+    }
     return { ok: false, error: `Unknown argument: ${flag}` };
   }
 
   if (!isLoopbackBind(args.bind) && args.origins.length === 0) {
     return {
       ok: false,
-      error: "Non-localhost --bind requires at least one --origin allowlist entry",
+      error:
+        "Non-localhost --bind requires at least one --origin allowlist entry",
     };
   }
 
@@ -96,5 +121,7 @@ export function formatCliHelp(): string {
     "  --workspace <path>    Executor workspace root (default ./tmp/agent-workspace)",
     "  --token <token>       Required handshake token (generated when omitted)",
     "  --origin <url>        Allowed Origin for non-localhost binds (repeatable)",
+    "  --profile <name>      trusted or controller (default trusted)",
+    "  --agent-config <path> JSON file containing the enabled ACP agent registry",
   ].join("\n");
 }
