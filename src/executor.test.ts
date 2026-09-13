@@ -141,6 +141,118 @@ describe("agent runtime executor ACP configuration", () => {
 });
 
 describe("agent runtime executor ACP model catalogs", () => {
+  it("reads a caller-identified persisted session without starting an agent", async () => {
+    const fake = createRuntime(["model", "reasoning_effort"]);
+    const getStatus = vi.fn(async ({ handle }) => {
+      if (handle.sessionKey !== "persisted-session") {
+        throw new Error(`ACP session not found: ${handle.sessionKey}`);
+      }
+      return {
+        models: {
+          currentModelId: "gpt-6",
+          availableModelIds: ["gpt-6", "gpt-5.6"],
+        },
+        details: {
+          configOptions: [
+            {
+              id: "reasoning_effort",
+              name: "Thinking",
+              type: "select",
+              currentValue: "medium",
+              options: [
+                { value: "low", name: "Low" },
+                { value: "medium", name: "Medium" },
+              ],
+            },
+          ],
+        },
+      };
+    });
+    fake.runtime.getStatus = getStatus;
+    const ensureSession = vi.spyOn(fake.runtime, "ensureSession");
+    const close = vi.spyOn(fake.runtime, "close");
+    const executor = createAgentRuntimeExecutor({
+      createAcpxRuntime: async () => fake.runtime,
+    });
+
+    await expect(
+      executor.listAcpModels(sink, {
+        agent: "codex",
+        sessionId: "persisted-session",
+      }),
+    ).resolves.toMatchObject({
+      agent: "codex",
+      currentModel: "gpt-6",
+      models: ["gpt-6", "gpt-5.6"],
+      configOptions: [
+        {
+          id: "reasoning_effort",
+          currentValue: "medium",
+        },
+      ],
+    });
+    expect(ensureSession).not.toHaveBeenCalled();
+    expect(close).not.toHaveBeenCalled();
+    expect(getStatus).toHaveBeenCalledWith({
+      handle: {
+        sessionKey: "persisted-session",
+        runtimeSessionName: "persisted-session",
+      },
+    });
+  });
+
+  it("reads a matching live session without starting or closing another runtime", async () => {
+    const fake = createRuntime(["model", "reasoning_effort"]);
+    fake.runtime.getStatus = async () => ({
+      models: {
+        currentModelId: "gpt-6",
+        availableModelIds: ["gpt-6", "gpt-5.6"],
+      },
+      details: {
+        configOptions: [
+          {
+            id: "reasoning_effort",
+            name: "Thinking",
+            type: "select",
+            currentValue: "high",
+            options: [
+              { value: "low", name: "Low" },
+              { value: "high", name: "High" },
+            ],
+          },
+        ],
+      },
+    });
+    const createAcpxRuntime = vi.fn(async () => fake.runtime);
+    const close = vi.spyOn(fake.runtime, "close");
+    const executor = createAgentRuntimeExecutor({ createAcpxRuntime });
+    const started = await executor.startAcpSession(sink, {
+      agent: "codex",
+      workspace: "/tmp/live-agent",
+    });
+
+    await expect(
+      executor.listAcpModels(sink, {
+        agent: "codex",
+        workspace: "/tmp/live-agent",
+      }),
+    ).resolves.toMatchObject({
+      agent: "codex",
+      currentModel: "gpt-6",
+      models: ["gpt-6", "gpt-5.6"],
+      configOptions: [
+        {
+          id: "reasoning_effort",
+          currentValue: "high",
+        },
+      ],
+    });
+    expect(createAcpxRuntime).toHaveBeenCalledTimes(1);
+    expect(close).not.toHaveBeenCalled();
+
+    await executor.closeAcpSession(started.sessionId);
+  });
+
   it("keeps Cursor models when backend session close is unsupported", async () => {
     const fake = createRuntime(["mode", "model"]);
     fake.runtime.getStatus = async () => ({
@@ -210,7 +322,9 @@ describe("agent runtime executor ACP model catalogs", () => {
       createAcpxRuntime: async () => fake.runtime,
     });
 
-    await expect(executor.listAcpModels(sink, { agent: "codex" })).resolves.toMatchObject({
+    await expect(
+      executor.listAcpModels(sink, { agent: "codex" }),
+    ).resolves.toMatchObject({
       configOptions: [
         {
           id: "model",
@@ -684,7 +798,9 @@ describe("agent runtime MCP projection", () => {
         command: expect.any(String),
         args: expect.any(Array),
         env: expect.objectContaining({
-          LAPIS_TOOL_BRIDGE_URL: expect.stringMatching(/^ws:\/\/127\.0\.0\.1:/u),
+          LAPIS_TOOL_BRIDGE_URL: expect.stringMatching(
+            /^ws:\/\/127\.0\.0\.1:/u,
+          ),
         }),
       }),
     ]);

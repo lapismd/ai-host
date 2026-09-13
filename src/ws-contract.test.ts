@@ -328,7 +328,7 @@ describe("agent-runtime websocket contract", () => {
       bridge.invoke("desktop_agent_acp_models", { agent: "cursor" }),
     ).resolves.toMatchObject({
       agent: "cursor",
-      currentModel: "composer",
+      currentModel: "composer-fast",
       models: ["composer", "composer-fast"],
     });
 

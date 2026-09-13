@@ -243,6 +243,9 @@ async function dispatchCommand(
       return executor.listAcpModels(sink, {
         workspace: options.workspace,
         agent: String(payload.agent ?? ""),
+        ...(typeof payload.sessionId === "string" && payload.sessionId.trim()
+          ? { sessionId: payload.sessionId }
+          : {}),
       });
     case "desktop_agent_acp_agents":
       return executor.listAcpAgents();

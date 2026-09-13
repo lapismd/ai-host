@@ -236,7 +236,7 @@ export type AgentRuntimeExecutor = {
   ): { sessionId: string };
   listAcpModels(
     sink: AgentHostSink,
-    payload: Pick<AcpStartPayload, "workspace" | "agent">,
+    payload: Pick<AcpStartPayload, "workspace" | "agent" | "sessionId">,
   ): Promise<AcpModelCatalog>;
   listAcpAgents(): { agents: AcpAgentCatalogEntry[] };
   getAcpSessionStatus(sessionId: string): AcpSessionStatus;
@@ -399,6 +399,7 @@ export function createAgentRuntimeExecutor(options?: {
     }
     session.runtime = runtime;
     session.handle = handle;
+    session.agentId = agent.id;
     session.connectionId = sink.connectionId;
     session.appToolBridgeId = effectivePayload.appToolBridgeId;
     session.restricted = effectivePayload.restricted === true;
@@ -637,8 +638,26 @@ export function createAgentRuntimeExecutor(options?: {
     },
 
     async listAcpModels(sink, payload) {
-      const sessionId = randomUUID();
       const agent = resolveAcpAgent(payload, agentRegistry);
+      const requestedSessionId = payload.sessionId?.trim();
+      const requestedLiveSession = requestedSessionId
+        ? acpSessions.get(requestedSessionId)
+        : undefined;
+      const liveSession =
+        requestedLiveSession &&
+        !requestedLiveSession.restricted &&
+        requestedLiveSession.agentId === agent.id
+          ? requestedLiveSession
+          : [...acpSessions.values()].find(
+              (session) => !session.restricted && session.agentId === agent.id,
+            );
+      if (liveSession?.runtime.getStatus) {
+        return modelCatalogFromStatus(
+          agent.id,
+          await liveSession.runtime.getStatus({ handle: liveSession.handle }),
+        );
+      }
+      const sessionId = randomUUID();
       let sequence = 0;
       const catalogSink: AgentRuntimeInputSink = {
         sendRuntimeEvent(event) {
@@ -667,6 +686,21 @@ export function createAgentRuntimeExecutor(options?: {
           permissionTimeoutMs,
         },
       );
+      if (requestedSessionId && runtime.getStatus) {
+        try {
+          return modelCatalogFromStatus(
+            agent.id,
+            await runtime.getStatus({
+              handle: {
+                sessionKey: requestedSessionId,
+                runtimeSessionName: requestedSessionId,
+              },
+            }),
+          );
+        } catch (error) {
+          if (!isMissingAcpSession(error)) throw error;
+        }
+      }
       const handle = await runtime.ensureSession({
         sessionKey: `model-catalog:${agent.id}:${sessionId}`,
         agent: agent.id,
@@ -675,24 +709,17 @@ export function createAgentRuntimeExecutor(options?: {
       });
       try {
         if (!runtime.getStatus) {
-          return { agent: agent.id, models: [], entries: [], configOptions: [] };
+          return {
+            agent: agent.id,
+            models: [],
+            entries: [],
+            configOptions: [],
+          };
         }
-        const status = await runtime.getStatus({ handle });
-        const currentModel = status.models?.currentModelId?.trim() || undefined;
-        const models = [
-          ...new Set(
-            (status.models?.availableModelIds ?? [])
-              .map((model) => model.trim())
-              .filter(Boolean),
-          ),
-        ];
-        return {
-          agent: agent.id,
-          currentModel,
-          models,
-          entries: catalogEntriesForAgent(agent.id, models),
-          configOptions: parseAcpConfigOptions(status.details?.configOptions),
-        };
+        return modelCatalogFromStatus(
+          agent.id,
+          await runtime.getStatus({ handle }),
+        );
       } finally {
         await closeDisposableAcpSession(runtime, handle);
       }
@@ -939,6 +966,33 @@ export function createAgentRuntimeExecutor(options?: {
   };
 }
 
+function modelCatalogFromStatus(
+  agent: string,
+  status: Awaited<ReturnType<NonNullable<AcpxRuntimeLike["getStatus"]>>>,
+): AcpModelCatalog {
+  const currentModel = status.models?.currentModelId?.trim() || undefined;
+  const models = [
+    ...new Set(
+      (status.models?.availableModelIds ?? [])
+        .map((model) => model.trim())
+        .filter(Boolean),
+    ),
+  ];
+  return {
+    agent,
+    currentModel,
+    models,
+    entries: catalogEntriesForAgent(agent, models),
+    configOptions: parseAcpConfigOptions(status.details?.configOptions),
+  };
+}
+
+function isMissingAcpSession(error: unknown): boolean {
+  return (
+    error instanceof Error && error.message.startsWith("ACP session not found:")
+  );
+}
+
 export function parseAcpConfigOptions(value: unknown): AcpConfigOption[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item): AcpConfigOption[] => {
@@ -953,28 +1007,51 @@ export function parseAcpConfigOptions(value: unknown): AcpConfigOption[] {
       !name ||
       (type !== "select" && type !== "boolean") ||
       (typeof currentValue !== "string" && typeof currentValue !== "boolean")
-    ) return [];
-    const values = type === "select" && Array.isArray(option.options)
-      ? option.options.flatMap((entry): NonNullable<AcpConfigOption["options"]> => {
-        if (!entry || typeof entry !== "object") return [];
-        const candidate = entry as Record<string, unknown>;
-        const value = typeof candidate.value === "string" ? candidate.value.trim() : "";
-        const label = typeof candidate.name === "string" ? candidate.name.trim() : "";
-        return value && label
-          ? [{ value, name: label, ...(typeof candidate.description === "string" && candidate.description.trim() ? { description: candidate.description.trim() } : {}) }]
-          : [];
-      })
-      : undefined;
+    )
+      return [];
+    const values =
+      type === "select" && Array.isArray(option.options)
+        ? option.options.flatMap(
+            (entry): NonNullable<AcpConfigOption["options"]> => {
+              if (!entry || typeof entry !== "object") return [];
+              const candidate = entry as Record<string, unknown>;
+              const value =
+                typeof candidate.value === "string"
+                  ? candidate.value.trim()
+                  : "";
+              const label =
+                typeof candidate.name === "string" ? candidate.name.trim() : "";
+              return value && label
+                ? [
+                    {
+                      value,
+                      name: label,
+                      ...(typeof candidate.description === "string" &&
+                      candidate.description.trim()
+                        ? { description: candidate.description.trim() }
+                        : {}),
+                    },
+                  ]
+                : [];
+            },
+          )
+        : undefined;
     if (type === "select" && (!values || values.length === 0)) return [];
-    return [{
-      id,
-      name,
-      type,
-      currentValue,
-      ...(typeof option.description === "string" && option.description.trim() ? { description: option.description.trim() } : {}),
-      ...(typeof option.category === "string" && option.category.trim() ? { category: option.category.trim() } : {}),
-      ...(values ? { options: values } : {}),
-    }];
+    return [
+      {
+        id,
+        name,
+        type,
+        currentValue,
+        ...(typeof option.description === "string" && option.description.trim()
+          ? { description: option.description.trim() }
+          : {}),
+        ...(typeof option.category === "string" && option.category.trim()
+          ? { category: option.category.trim() }
+          : {}),
+        ...(values ? { options: values } : {}),
+      },
+    ];
   });
 }
 
@@ -985,6 +1062,7 @@ type AcpSessionState = {
   sink: AgentHostSink;
   currentRunId: string;
   nextSequence: number;
+  agentId?: string;
   connectionId?: string;
   appToolBridgeId?: string;
   restricted: boolean;
