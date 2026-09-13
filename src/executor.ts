@@ -1050,8 +1050,7 @@ export async function defaultCreateAcpxRuntime(
     createRuntimeStore: (options: { stateDir: string }) => unknown;
   };
   try {
-    const specifier = "acpx/runtime";
-    acpx = (await import(specifier)) as typeof acpx;
+    acpx = (await import("acpx/runtime")) as unknown as typeof acpx;
   } catch {
     throw new Error(
       "acpx/runtime is not available. Install acpx >= 0.8.0 on the AI host.",

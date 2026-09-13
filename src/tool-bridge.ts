@@ -1,5 +1,10 @@
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import {
+  createServer,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Server as McpServer } from "@modelcontextprotocol/sdk/server/index.js";
@@ -95,6 +100,7 @@ export type ToolBridgeBrokerOptions = {
   shimPath?: string;
   nodeCommand?: string;
   shimArgsPrefix?: string[];
+  shimCommand?: { command: string; args: string[] };
   extraEnv?: Record<string, string>;
   listenPort?: number;
   externalHttpBaseUrl?: string;
@@ -102,9 +108,7 @@ export type ToolBridgeBrokerOptions = {
 
 export class ToolBridgeBroker {
   readonly #bridges = new Map<string, BridgeRecord>();
-  readonly #shimPath: string;
-  readonly #nodeCommand: string;
-  readonly #shimArgsPrefix: string[];
+  readonly #shimCommand: { command: string; args: string[] };
   readonly #extraEnv: Record<string, string>;
   readonly #listenPort: number;
   readonly #externalHttpBaseUrl: URL | null;
@@ -114,9 +118,15 @@ export class ToolBridgeBroker {
   #port = 0;
 
   constructor(options: ToolBridgeBrokerOptions = {}) {
-    this.#shimPath = options.shimPath ?? resolveDefaultShimPath();
-    this.#nodeCommand = options.nodeCommand ?? process.execPath;
-    this.#shimArgsPrefix = [...(options.shimArgsPrefix ?? [])];
+    this.#shimCommand = options.shimCommand
+      ? normalizeShimCommand(options.shimCommand)
+      : {
+          command: options.nodeCommand ?? process.execPath,
+          args: [
+            ...(options.shimArgsPrefix ?? []),
+            options.shimPath ?? resolveDefaultShimPath(),
+          ],
+        };
     this.#extraEnv = { ...(options.extraEnv ?? {}) };
     this.#listenPort = validateListenPort(options.listenPort ?? 0);
     this.#externalHttpBaseUrl = normalizeExternalHttpBaseUrl(
@@ -159,8 +169,8 @@ export class ToolBridgeBroker {
     }
     return {
       name: "lapis-tools",
-      command: this.#nodeCommand,
-      args: [...this.#shimArgsPrefix, this.#shimPath],
+      command: this.#shimCommand.command,
+      args: [...this.#shimCommand.args],
       env: {
         ...this.#extraEnv,
         LAPIS_TOOL_BRIDGE_URL: `ws://127.0.0.1:${this.#port}`,
@@ -182,9 +192,7 @@ export class ToolBridgeBroker {
       type: "http",
       name: "lapis-tools",
       url,
-      headers: [
-        { name: "Authorization", value: `Bearer ${bridge.token}` },
-      ],
+      headers: [{ name: "Authorization", value: `Bearer ${bridge.token}` }],
     };
   }
 
@@ -194,14 +202,18 @@ export class ToolBridgeBroker {
     const routePrefix = `${this.#externalHttpBaseUrl.pathname}mcp/`;
     if (!requestUrl.pathname.startsWith(routePrefix)) return undefined;
     const bridgeId = requestUrl.pathname.slice(routePrefix.length);
-    if (!bridgeId || bridgeId.includes("/")) return new Response(null, { status: 404 });
-    const token = bearerToken(request.headers.get("authorization") ?? undefined);
+    if (!bridgeId || bridgeId.includes("/"))
+      return new Response(null, { status: 404 });
+    const token = bearerToken(
+      request.headers.get("authorization") ?? undefined,
+    );
     const bridge = this.#bridges.get(bridgeId);
     if (!bridge || !token || !tokensEqual(bridge.token, token)) {
       return new Response(null, { status: 401 });
     }
-    const server = createLapisMcpServer(bridge.descriptors, (name, input, signal) =>
-      this.#invokeLocal(bridge, name, input, signal),
+    const server = createLapisMcpServer(
+      bridge.descriptors,
+      (name, input, signal) => this.#invokeLocal(bridge, name, input, signal),
     );
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
@@ -238,7 +250,10 @@ export class ToolBridgeBroker {
       sendJson(pending.socket, {
         type: "result",
         id: response.callId,
-        error: { code: "result_too_large", message: "Tool result is too large" },
+        error: {
+          code: "result_too_large",
+          message: "Tool result is too large",
+        },
       });
       return;
     }
@@ -339,7 +354,9 @@ export class ToolBridgeBroker {
         bridgeId: bridge.id,
         descriptors: bridge.descriptors,
       });
-      socket.on("message", (later) => this.#handleBridgeMessage(bridge!, socket, later.toString()));
+      socket.on("message", (later) =>
+        this.#handleBridgeMessage(bridge!, socket, later.toString()),
+      );
     });
     socket.on("close", () => {
       clearTimeout(helloTimer);
@@ -432,8 +449,9 @@ export class ToolBridgeBroker {
       res.writeHead(401).end();
       return;
     }
-    const server = createLapisMcpServer(bridge.descriptors, (name, input, signal) =>
-      this.#invokeLocal(bridge, name, input, signal),
+    const server = createLapisMcpServer(
+      bridge.descriptors,
+      (name, input, signal) => this.#invokeLocal(bridge, name, input, signal),
     );
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
@@ -526,7 +544,9 @@ export class ToolBridgeBroker {
 
 function validateListenPort(port: number): number {
   if (!Number.isInteger(port) || port < 0 || port > 65_535) {
-    throw new Error("Tool bridge listen port must be an integer from 0 to 65535");
+    throw new Error(
+      "Tool bridge listen port must be an integer from 0 to 65535",
+    );
   }
   return port;
 }
@@ -542,7 +562,9 @@ function normalizeExternalHttpBaseUrl(value: string | undefined): URL | null {
     url.search ||
     url.hash
   ) {
-    throw new Error("External tool bridge URL must be an uncredentialed 127.0.0.1 HTTP URL");
+    throw new Error(
+      "External tool bridge URL must be an uncredentialed 127.0.0.1 HTTP URL",
+    );
   }
   url.pathname = `${url.pathname.replace(/\/*$/u, "")}/`;
   return url;
@@ -571,7 +593,10 @@ function sanitizeDescriptors(
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
-function parseRecord(raw: string, maxBytes: number): Record<string, unknown> | null {
+function parseRecord(
+  raw: string,
+  maxBytes: number,
+): Record<string, unknown> | null {
   if (Buffer.byteLength(raw) > maxBytes) return null;
   try {
     const value = JSON.parse(raw);
@@ -595,7 +620,8 @@ function tokensEqual(left: string, right: string): boolean {
   const leftBytes = Buffer.from(left);
   const rightBytes = Buffer.from(right);
   return (
-    leftBytes.length === rightBytes.length && timingSafeEqual(leftBytes, rightBytes)
+    leftBytes.length === rightBytes.length &&
+    timingSafeEqual(leftBytes, rightBytes)
   );
 }
 
@@ -661,4 +687,16 @@ export function resolveDefaultShimPath(moduleUrl = import.meta.url): string {
     ? path.dirname(directory)
     : directory;
   return path.join(packageRoot, "bin", "lapis-mcp-shim.mjs");
+}
+
+function normalizeShimCommand(input: { command: string; args: string[] }): {
+  command: string;
+  args: string[];
+} {
+  const command = input.command.trim();
+  if (!command) throw new Error("MCP shim command must not be empty");
+  if (!Array.isArray(input.args) || input.args.some((arg) => !arg.trim())) {
+    throw new Error("MCP shim arguments must not be empty");
+  }
+  return { command, args: input.args.map((arg) => arg.trim()) };
 }

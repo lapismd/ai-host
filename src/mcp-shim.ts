@@ -40,16 +40,23 @@ class BrokerClient {
       socket.once("open", () => {
         socket.send(JSON.stringify({ type: "hello", bridgeId, token }));
       });
-      socket.once("error", () => fail(new Error("Tool bridge connection failed")));
+      socket.once("error", () =>
+        fail(new Error("Tool bridge connection failed")),
+      );
       socket.once("message", (raw) => {
         const message = parseRecord(raw.toString());
-        if (message?.type !== "hello.ok" || !Array.isArray(message.descriptors)) {
+        if (
+          message?.type !== "hello.ok" ||
+          !Array.isArray(message.descriptors)
+        ) {
           fail(new Error("Tool bridge authentication failed"));
           return;
         }
         this.descriptors = message.descriptors as Descriptor[];
         socket.on("message", (later) => this.#handle(later.toString()));
-        socket.on("close", () => this.#rejectAll(new Error("Tool bridge closed")));
+        socket.on("close", () =>
+          this.#rejectAll(new Error("Tool bridge closed")),
+        );
         resolve();
       });
     });
@@ -96,7 +103,10 @@ class BrokerClient {
         content: [
           {
             type: "text",
-            text: String((message.error as { message?: unknown }).message ?? "Tool call failed"),
+            text: String(
+              (message.error as { message?: unknown }).message ??
+                "Tool call failed",
+            ),
           },
         ],
         isError: true,
@@ -115,7 +125,7 @@ class BrokerClient {
   }
 }
 
-async function main(): Promise<void> {
+export async function runMcpShim(): Promise<void> {
   const broker = new BrokerClient();
   await broker.connect();
   const server = new Server(
@@ -182,10 +192,3 @@ function parseRecord(raw: string): Record<string, unknown> | null {
     return null;
   }
 }
-
-main().catch((error) => {
-  console.error(
-    `[lapis-mcp-shim] ${error instanceof Error ? error.message : String(error)}`,
-  );
-  process.exit(1);
-});

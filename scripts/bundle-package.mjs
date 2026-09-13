@@ -29,7 +29,7 @@ await bundle("src/cli.ts", "dist/cli.js", {
   banner: { js: "#!/usr/bin/env node" },
 });
 
-await bundle("src/mcp-shim.ts", "dist/mcp-shim.js", {
+await bundle("src/mcp-shim-cli.ts", "dist/mcp-shim.js", {
   banner: { js: "#!/usr/bin/env node" },
 });
 

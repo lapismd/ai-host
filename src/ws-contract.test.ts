@@ -174,7 +174,7 @@ describe("agent-runtime websocket contract", () => {
         return baseRuntime(sink, sessionId, payload, pendingApprovals);
       },
       {
-        shimPath: new URL("./mcp-shim.ts", import.meta.url).pathname,
+        shimPath: new URL("./mcp-shim-cli.ts", import.meta.url).pathname,
         shimArgsPrefix: ["--import", "tsx"],
       },
     );

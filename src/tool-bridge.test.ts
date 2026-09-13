@@ -77,9 +77,39 @@ describe("app tool stdio bridge", () => {
     ).toBe(expected);
   });
 
+  it("uses an embedding executable as the complete shim launcher", async () => {
+    broker = new ToolBridgeBroker({
+      shimCommand: {
+        command: "/opt/lapis/bin/nostr-acp",
+        args: ["__internal", "mcp-shim"],
+      },
+    });
+    const opened = await broker.open(
+      {
+        connectionId: "renderer-1",
+        sendToolCall: vi.fn(),
+        sendToolCancel: vi.fn(),
+      },
+      {
+        bindingId: "binding-1",
+        conversationId: "conversation-1",
+        descriptors: [],
+      },
+    );
+    const contribution = broker.serverContribution(
+      "renderer-1",
+      opened.bridgeId,
+    );
+    expect(contribution.command).toBe("/opt/lapis/bin/nostr-acp");
+    expect(contribution.args).toEqual(["__internal", "mcp-shim"]);
+    expect(contribution.args.join(" ")).not.toContain(
+      contribution.env.LAPIS_TOOL_BRIDGE_TOKEN,
+    );
+  });
+
   it("lists and calls a snapshotted app tool through a real MCP shim", async () => {
     broker = new ToolBridgeBroker({
-      shimPath: new URL("./mcp-shim.ts", import.meta.url).pathname,
+      shimPath: new URL("./mcp-shim-cli.ts", import.meta.url).pathname,
       shimArgsPrefix: ["--import", "tsx"],
     });
     const onCall = vi.fn((call: ToolBridgeCall) => {
@@ -177,13 +207,16 @@ describe("app tool stdio bridge", () => {
       "renderer-1",
       opened.bridgeId,
     );
-    const transport = new StreamableHTTPClientTransport(new URL(contribution.url), {
-      requestInit: {
-        headers: Object.fromEntries(
-          contribution.headers.map((header) => [header.name, header.value]),
-        ),
+    const transport = new StreamableHTTPClientTransport(
+      new URL(contribution.url),
+      {
+        requestInit: {
+          headers: Object.fromEntries(
+            contribution.headers.map((header) => [header.name, header.value]),
+          ),
+        },
       },
-    });
+    );
     client = new Client({ name: "bridge-http-test", version: "1.0.0" });
     await client.connect(transport);
 

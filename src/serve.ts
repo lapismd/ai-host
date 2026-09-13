@@ -20,6 +20,7 @@ export async function serveAgentHost(
   options?: {
     executor?: ReturnType<typeof createAgentRuntimeExecutor>;
     print?: (line: string) => void;
+    printToken?: boolean;
   },
 ): Promise<RunningAgentHost> {
   const provided = args.token?.trim() ?? "";
@@ -58,7 +59,7 @@ export async function serveAgentHost(
   const url = `ws://${args.bind}:${server.port}`;
   const print = options?.print ?? console.log;
   print(`lapis-ai-host listening on ${url}`);
-  print(`token: ${token}`);
+  if (options?.printToken !== false) print(`token: ${token}`);
 
   return {
     token,

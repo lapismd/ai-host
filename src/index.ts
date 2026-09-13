@@ -58,6 +58,7 @@ export {
   type UnsequencedAgentRuntimeEvent,
 } from "./protocol";
 export { RuntimeEventReplayBuffer } from "./replay-buffer";
+export { runMcpShim } from "./mcp-shim";
 export { serveAgentHost, type RunningAgentHost } from "./serve";
 export { generateToken, isLoopbackBind, tokensEqual } from "./token";
 export {

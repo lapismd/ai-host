@@ -38,4 +38,29 @@ describe("serveAgentHost", () => {
     expect(printed.filter((line) => line.startsWith("token:")).length).toBe(1);
     expect(printed.some((line) => line.includes(host!.url))).toBe(true);
   });
+
+  it("lets an embedding host suppress token output", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "lapis-ai-host-"));
+    const printed: string[] = [];
+    host = await serveAgentHost(
+      {
+        port: 0,
+        bind: "127.0.0.1",
+        workspace,
+        origins: [],
+        profile: "controller",
+      },
+      {
+        executor: createAgentRuntimeExecutor({
+          createAcpxRuntime: async () => {
+            throw new Error("unused");
+          },
+        }),
+        print: (line) => printed.push(line),
+        printToken: false,
+      },
+    );
+    expect(printed).toEqual([`lapis-ai-host listening on ${host.url}`]);
+    expect(printed.join("\n")).not.toContain(host.token);
+  });
 });

@@ -63,7 +63,7 @@ export default defineConfig(tableRequirements(), {
           chapters: ["spec/src/executor.md"],
         },
         {
-          pattern: "^src/(?:mcp-shim|tool-bridge)\\.ts$",
+          pattern: "^src/(?:mcp-shim(?:-cli)?|tool-bridge)\\.ts$",
           chapters: ["spec/src/executor.md"],
         },
         {
