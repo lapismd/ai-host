@@ -93,6 +93,17 @@ export type AcpModelCatalog = {
   currentModel?: string;
   models: string[];
   entries: AcpModelEntry[];
+  configOptions: AcpConfigOption[];
+};
+
+export type AcpConfigOption = {
+  id: string;
+  name: string;
+  description?: string;
+  category?: string;
+  type: "select" | "boolean";
+  currentValue: string | boolean;
+  options?: Array<{ value: string; name: string; description?: string }>;
 };
 
 export type AcpAgentCatalogEntry = {
@@ -163,6 +174,10 @@ export type AcpxRuntimeLike = {
     models?: {
       currentModelId?: string;
       availableModelIds?: string[];
+    };
+    details?: {
+      configOptions?: unknown;
+      [key: string]: unknown;
     };
   }>;
   getCapabilities?(input: {
@@ -660,7 +675,7 @@ export function createAgentRuntimeExecutor(options?: {
       });
       try {
         if (!runtime.getStatus) {
-          return { agent: agent.id, models: [], entries: [] };
+          return { agent: agent.id, models: [], entries: [], configOptions: [] };
         }
         const status = await runtime.getStatus({ handle });
         const currentModel = status.models?.currentModelId?.trim() || undefined;
@@ -676,6 +691,7 @@ export function createAgentRuntimeExecutor(options?: {
           currentModel,
           models,
           entries: catalogEntriesForAgent(agent.id, models),
+          configOptions: parseAcpConfigOptions(status.details?.configOptions),
         };
       } finally {
         await closeDisposableAcpSession(runtime, handle);
@@ -921,6 +937,45 @@ export function createAgentRuntimeExecutor(options?: {
       await toolBridges.close();
     },
   };
+}
+
+export function parseAcpConfigOptions(value: unknown): AcpConfigOption[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item): AcpConfigOption[] => {
+    if (!item || typeof item !== "object") return [];
+    const option = item as Record<string, unknown>;
+    const id = typeof option.id === "string" ? option.id.trim() : "";
+    const name = typeof option.name === "string" ? option.name.trim() : "";
+    const type = option.type;
+    const currentValue = option.currentValue;
+    if (
+      !id ||
+      !name ||
+      (type !== "select" && type !== "boolean") ||
+      (typeof currentValue !== "string" && typeof currentValue !== "boolean")
+    ) return [];
+    const values = type === "select" && Array.isArray(option.options)
+      ? option.options.flatMap((entry): NonNullable<AcpConfigOption["options"]> => {
+        if (!entry || typeof entry !== "object") return [];
+        const candidate = entry as Record<string, unknown>;
+        const value = typeof candidate.value === "string" ? candidate.value.trim() : "";
+        const label = typeof candidate.name === "string" ? candidate.name.trim() : "";
+        return value && label
+          ? [{ value, name: label, ...(typeof candidate.description === "string" && candidate.description.trim() ? { description: candidate.description.trim() } : {}) }]
+          : [];
+      })
+      : undefined;
+    if (type === "select" && (!values || values.length === 0)) return [];
+    return [{
+      id,
+      name,
+      type,
+      currentValue,
+      ...(typeof option.description === "string" && option.description.trim() ? { description: option.description.trim() } : {}),
+      ...(typeof option.category === "string" && option.category.trim() ? { category: option.category.trim() } : {}),
+      ...(values ? { options: values } : {}),
+    }];
+  });
 }
 
 type AcpSessionState = {

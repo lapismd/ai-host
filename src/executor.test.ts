@@ -172,6 +172,7 @@ describe("agent runtime executor ACP model catalogs", () => {
         { id: "composer-2.5", label: "composer-2.5" },
         { id: "composer-2.5-fast", label: "composer-2.5-fast" },
       ],
+      configOptions: [],
     });
     expect(close).toHaveBeenNthCalledWith(1, {
       handle: expect.any(Object),
@@ -181,6 +182,48 @@ describe("agent runtime executor ACP model catalogs", () => {
     expect(close).toHaveBeenNthCalledWith(2, {
       handle: expect.any(Object),
       reason: "model catalog complete",
+    });
+  });
+
+  it("returns validated runtime configuration options", async () => {
+    const fake = createRuntime(["model", "reasoning_effort"]);
+    fake.runtime.getStatus = async () => ({
+      models: { currentModelId: "gpt-6" },
+      details: {
+        configOptions: [
+          {
+            id: "model",
+            name: "Model",
+            category: "model",
+            type: "select",
+            currentValue: "gpt-6",
+            options: [
+              { value: "gpt-6", name: "GPT-6" },
+              { value: "gpt-5.6", name: "GPT-5.6" },
+            ],
+          },
+          { id: "invalid", name: "Invalid", type: "text", currentValue: "x" },
+        ],
+      },
+    });
+    const executor = createAgentRuntimeExecutor({
+      createAcpxRuntime: async () => fake.runtime,
+    });
+
+    await expect(executor.listAcpModels(sink, { agent: "codex" })).resolves.toMatchObject({
+      configOptions: [
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "gpt-6",
+          options: [
+            { value: "gpt-6", name: "GPT-6" },
+            { value: "gpt-5.6", name: "GPT-5.6" },
+          ],
+        },
+      ],
     });
   });
 });

@@ -79,6 +79,22 @@ describe("toAcpxSessionOptions", () => {
     });
   });
 
+  it("accepts neutral controller bootstrap text without a Lapis marker", () => {
+    expect(
+      toAcpxSessionOptions({
+        metadata: {
+          sessionBootstrap:
+            "You are operating through a Nostr controller. Explicit writes require approval.",
+        },
+      }),
+    ).toEqual({
+      systemPrompt: {
+        append:
+          "You are operating through a Nostr controller. Explicit writes require approval.",
+      },
+    });
+  });
+
   it("omits path-bearing bootstrap text", () => {
     expect(
       toAcpxSessionOptions({
