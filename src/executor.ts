@@ -56,6 +56,7 @@ export type SpawnPayload = {
 
 export type AcpStartPayload = {
   sessionId?: string;
+  sequenceBase?: number;
   workspace?: string;
   agent?: string;
   model?: { provider?: string; model?: string };
@@ -290,6 +291,7 @@ export function createAgentRuntimeExecutor(options?: {
     sessionId: string,
     initialState?: AcpSessionState,
   ): Promise<AcpSessionState> {
+    const sequenceBase = resolveSequenceBase(payload);
     const existing = acpSessions.get(sessionId);
     if (existing) {
       if (
@@ -314,6 +316,7 @@ export function createAgentRuntimeExecutor(options?: {
         }
       } else {
         existing.sink = sink;
+        existing.nextSequence = Math.max(existing.nextSequence, sequenceBase);
         return existing;
       }
     }
@@ -321,7 +324,9 @@ export function createAgentRuntimeExecutor(options?: {
       ? restrictedAcpPayload(payload)
       : withAppToolMcpServer(payload, sink, toolBridges, agentRegistry);
     const agent = resolveAcpAgent(effectivePayload, agentRegistry);
-    const session = initialState ?? createAcpSessionState(sessionId, sink);
+    const session =
+      initialState ?? createAcpSessionState(sessionId, sink, sequenceBase);
+    session.nextSequence = Math.max(session.nextSequence, sequenceBase);
     session.sink = sink;
     const runtimeSink: AgentRuntimeInputSink = {
       sendRuntimeEvent(event) {
@@ -553,9 +558,14 @@ export function createAgentRuntimeExecutor(options?: {
 
     async startAcpSession(sink, payload) {
       const sessionId = resolveAcpSessionId(payload);
+      const sequenceBase = resolveSequenceBase(payload);
       const pending = pendingAcpSessions.get(sessionId);
       if (pending) {
         pending.session.sink = sink;
+        pending.session.nextSequence = Math.max(
+          pending.session.nextSequence,
+          sequenceBase,
+        );
         await pending.ready;
         return { sessionId };
       }
@@ -570,7 +580,11 @@ export function createAgentRuntimeExecutor(options?: {
         existingPending.session.sink = sink;
         return { sessionId };
       }
-      const session = createAcpSessionState(sessionId, sink);
+      const session = createAcpSessionState(
+        sessionId,
+        sink,
+        resolveSequenceBase(payload),
+      );
       const pending: PendingAcpSessionState = {
         session,
         prompts: new Set(),
@@ -937,17 +951,26 @@ type PendingAcpSessionState = {
 function createAcpSessionState(
   sessionId: string,
   sink: AgentHostSink,
+  sequenceBase = 0,
 ): AcpSessionState {
   return {
     sessionId,
     sink,
     currentRunId: "session",
-    nextSequence: 0,
+    nextSequence: sequenceBase,
     runtime: undefined as unknown as AcpxRuntimeLike,
     handle: undefined as unknown as AcpRuntimeHandle,
     restricted: false,
     running: false,
   };
+}
+
+function resolveSequenceBase(payload: AcpStartPayload): number {
+  const value = payload.sequenceBase ?? 0;
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error("ACP sequence base must be a non-negative safe integer");
+  }
+  return value;
 }
 
 function resolveAcpSessionId(payload: AcpStartPayload): string {

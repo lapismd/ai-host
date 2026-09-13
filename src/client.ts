@@ -429,10 +429,11 @@ export function createAgentRuntimeBridge(
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       throw new Error("Agent-runtime socket is not open");
     }
+    const commandPayload = continuationPayload(command, payload);
     const id = nextMessageId();
     const result = await new Promise<unknown>((resolve, reject) => {
       pending.set(id, { resolve, reject });
-      socket!.send(JSON.stringify({ id, command, payload }));
+      socket!.send(JSON.stringify({ id, command, payload: commandPayload }));
     });
     if (command === "desktop_agent_tools_open") {
       const bridgeId = String(
@@ -471,6 +472,17 @@ export function createAgentRuntimeBridge(
       }
     }
     return result as T;
+  }
+
+  function continuationPayload(
+    command: string,
+    payload: Record<string, unknown> | undefined,
+  ): Record<string, unknown> | undefined {
+    if (command !== "desktop_agent_acp_start") return payload;
+    const sessionId = String(payload?.sessionId ?? "");
+    const sequenceBase = activeSessions.get(sessionId);
+    if (!sessionId || sequenceBase === undefined) return payload;
+    return { ...payload, sequenceBase };
   }
 
   return {

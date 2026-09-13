@@ -506,7 +506,7 @@ describe("agent-runtime websocket contract", () => {
     second.dispose();
   });
 
-  it("surfaces host restart as an interrupted turn without replaying input", async () => {
+  it("continues monotonic delivery after a host restart without replaying input", async () => {
     let turns = 0;
     const createRuntime: CreateAcpxRuntime = async () => ({
       async ensureSession(input) {
@@ -514,9 +514,10 @@ describe("agent-runtime websocket contract", () => {
       },
       startTurn() {
         turns += 1;
+        const text = turns === 1 ? "before restart" : "after restart";
         return {
           events: (async function* () {
-            yield { type: "text_delta", text: "before restart" };
+            yield { type: "text_delta", text };
           })(),
           result: Promise.resolve({ status: "completed" }),
         };
@@ -526,23 +527,24 @@ describe("agent-runtime websocket contract", () => {
     });
     const running = await startHost(createRuntime);
     const port = Number(new URL(running.url).port);
-    const bridge = createAgentRuntimeBridge({
+    const firstBridge = createAgentRuntimeBridge({
       url: running.url,
       token: running.token,
     });
-    const events: Array<Record<string, unknown>> = [];
-    bridge.onAgentRuntimeEvent?.((event) => events.push(event));
-    const { sessionId } = await bridge.invoke<{ sessionId: string }>(
+    const firstEvents: Array<Record<string, unknown>> = [];
+    firstBridge.onAgentRuntimeEvent?.((event) => firstEvents.push(event));
+    const { sessionId } = await firstBridge.invoke<{ sessionId: string }>(
       "desktop_agent_acp_start",
       { agent: "codex" },
     );
-    await bridge.invoke("desktop_agent_acp_prompt", {
+    await firstBridge.invoke("desktop_agent_acp_prompt", {
       sessionId,
       text: "must run once",
     });
     await expect
-      .poll(() => eventTexts(events).includes("before restart"))
+      .poll(() => eventTexts(firstEvents).includes("before restart"))
       .toBe(true);
+    firstBridge.dispose();
 
     await running.close();
     host = await serveAgentHost(
@@ -561,6 +563,16 @@ describe("agent-runtime websocket contract", () => {
       },
     );
 
+    const events: Array<Record<string, unknown>> = [];
+    const bridge = createAgentRuntimeBridge({
+      url: host.url,
+      token: host.token,
+      manualAcknowledgement: true,
+      replayCursors: [{ sessionId, afterSequence: 82 }],
+    });
+    bridge.onAgentRuntimeEvent?.((event) => events.push(event));
+    await bridge.invoke("desktop_agent_acp_status", { sessionId });
+
     await expect
       .poll(
         () =>
@@ -572,7 +584,36 @@ describe("agent-runtime websocket contract", () => {
         { timeout: 3_000 },
       )
       .toBe(true);
+    const replayGapSequence = Math.max(
+      ...events
+        .filter(
+          (event) =>
+            (event.event as { event?: { code?: string } } | undefined)?.event
+              ?.code === "AGENT_RUNTIME_REPLAY_GAP",
+        )
+        .map((event) => Number(event.sequence)),
+    );
     expect(turns).toBe(1);
+
+    await bridge.invoke("desktop_agent_acp_start", {
+      sessionId,
+      agent: "codex",
+    });
+    await bridge.invoke("desktop_agent_acp_prompt", {
+      sessionId,
+      text: "new turn after restart",
+    });
+    await expect
+      .poll(() => eventTexts(events).includes("after restart"))
+      .toBe(true);
+    const resumed = events.find(
+      (event) =>
+        (event.event as { event?: { text?: string } } | undefined)?.event
+          ?.text === "after restart",
+    );
+    expect(Number(resumed?.sequence)).toBeGreaterThan(replayGapSequence);
+    expect(eventTexts(events)).not.toContain("before restart");
+    expect(turns).toBe(2);
     bridge.dispose();
   });
 
