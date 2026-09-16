@@ -40,3 +40,8 @@ packages to resolve through npm semver ranges while source fixes stay owned by
 their source repositories.
 
 Standalone executable and operator CLI behavior is specified in [Standalone operator CLI](./cli.md). The CLI suppresses automatic token output; embedded library behavior remains compatible.
+
+Operator implementation and executable release workflows now belong to the
+sibling AI Controller. This repository validates the transport library, its
+public declarations and private shim packaging; removed CLI paths remain mapped
+so accidental reintroduction still requires canonical review.

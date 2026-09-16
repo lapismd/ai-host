@@ -236,7 +236,6 @@ function assertNoPortableManifestViolations(tarballPath) {
     "package/README.md",
     "package/CHANGELOG.md",
     "package/LICENSE.md",
-    "package/bin/lapis-ai-host.mjs",
     "package/bin/lapis-mcp-shim.mjs",
     "package/dist/index.js",
     "package/dist/index.d.ts",
@@ -244,7 +243,6 @@ function assertNoPortableManifestViolations(tarballPath) {
     "package/dist/client.d.ts",
     "package/dist/file-tools/index.js",
     "package/dist/file-tools/index.d.ts",
-    "package/dist/cli.js",
     "package/dist/mcp-shim.js",
     "package/src/file-tools/NOTICE.md",
     "package/spec/src/architecture.md",
@@ -373,9 +371,8 @@ function verifyTarballConsumer(tarballPath) {
       ],
       { cwd: tmp },
     );
-    runInherited("node", ["node_modules/.bin/lapis-ai-host", "--help"], {
-      cwd: tmp,
-    });
+    if (existsSync(path.join(tmp, "node_modules/.bin/lapis-ai-host")))
+      throw new Error("Transport package installed an operator command");
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

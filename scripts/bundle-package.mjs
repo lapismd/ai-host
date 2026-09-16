@@ -28,12 +28,8 @@ await bundle("src/index.ts", "dist/index.js");
 await bundle("src/client.ts", "dist/client.js");
 await bundle("src/file-tools/index.ts", "dist/file-tools/index.js");
 
-await bundle("src/main.ts", "dist/cli.js", {
-  banner: { js: "#!/usr/bin/env node" },
-});
-
 await bundle("src/mcp-shim-cli.ts", "dist/mcp-shim.js", {
   banner: { js: "#!/usr/bin/env node" },
 });
 
-console.log("[ai-host] package, CLI, and MCP shim bundles written");
+console.log("[ai-host] transport library and private MCP shim bundles written");

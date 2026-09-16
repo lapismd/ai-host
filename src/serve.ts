@@ -2,7 +2,15 @@ import { mkdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createAcpAgentRegistry, parseAcpAgentDefinitions } from "./acp-agent";
 import { createAgentRuntimeExecutor } from "./executor";
-import type { ServeArgs } from "./parse-cli";
+export type ServeArgs = {
+  port: number;
+  bind: string;
+  workspace: string;
+  token?: string;
+  origins: string[];
+  profile?: "trusted" | "controller";
+  agentConfig?: string;
+};
 import type { AcpSessionStatus } from "./executor";
 import { generateToken } from "./token";
 import { startAgentRuntimeServer, type AgentRuntimeServer } from "./ws-server";

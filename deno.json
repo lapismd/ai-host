@@ -2,19 +2,12 @@
   "nodeModulesDir": "none",
   "compilerOptions": {
     "strict": true,
-    "types": [
-      "npm:@types/node@22.20.1",
-      "npm:@types/ws@8.18.1"
-    ]
+    "types": ["npm:@types/node@22.20.1", "npm:@types/ws@8.18.1"]
   },
   "tasks": {
-    "check": "deno check --sloppy-imports src/main.ts src/index.ts src/client.ts && deno task docs:check",
+    "check": "deno check --sloppy-imports src/index.ts src/client.ts",
     "test": "pnpm test",
-    "build": "deno run -A --sloppy-imports scripts/build-cli.ts",
-    "build:all": "deno run -A --sloppy-imports scripts/build-cli.ts --all",
-    "docs:check": "deno run -A --sloppy-imports scripts/docs-cli.ts --check",
-    "docs:write": "deno run -A --sloppy-imports scripts/docs-cli.ts",
-    "test:cli": "deno run -A --sloppy-imports scripts/smoke-cli.ts",
+    "build": "pnpm build",
     "spec:check": "pnpm spec:check"
   },
   "imports": {
@@ -26,7 +19,5 @@
     "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js": "npm:@modelcontextprotocol/sdk@1.30.0/server/webStandardStreamableHttp.js",
     "@modelcontextprotocol/sdk/types.js": "npm:@modelcontextprotocol/sdk@1.30.0/types.js"
   },
-  "unstable": [
-    "sloppy-imports"
-  ]
+  "unstable": ["sloppy-imports"]
 }

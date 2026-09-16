@@ -35,15 +35,6 @@ export {
   type SpawnPayload,
 } from "./executor";
 export {
-  DEFAULT_SERVE_BIND,
-  DEFAULT_SERVE_PORT,
-  DEFAULT_SERVE_WORKSPACE,
-  formatCliHelp,
-  parseServeArgs,
-  type ParsedCli,
-  type ServeArgs,
-} from "./parse-cli";
-export {
   AGENT_RUNTIME_COMMANDS,
   AGENT_RUNTIME_PROTOCOL,
   AUTH_CLOSE_CODE,
@@ -59,7 +50,7 @@ export {
 } from "./protocol";
 export { RuntimeEventReplayBuffer } from "./replay-buffer";
 export { runMcpShim } from "./mcp-shim";
-export { serveAgentHost, type RunningAgentHost } from "./serve";
+export { serveAgentHost, type RunningAgentHost, type ServeArgs } from "./serve";
 export { generateToken, isLoopbackBind, tokensEqual } from "./token";
 export {
   startAgentRuntimeServer,

@@ -1,7 +1,7 @@
 {
   "name": "@lapismd/ai-host",
   "version": "0.1.0",
-  "description": "Standalone ACP process host, WebSocket server, and MCP tool bridge for LapisMD consumers",
+  "description": "ACP and process transport mechanics, MCP bridge and portable file tools",
   "license": "Apache-2.0",
   "packageManager": "pnpm@10.32.1",
   "engines": {
@@ -26,21 +26,15 @@
     "CHANGELOG.md",
     "LICENSE.md",
     "README.md",
-    "spec/src/*.md",
-    "docs/cli/reference.md"
+    "spec/src/*.md"
   ],
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org"
   },
-  "bin": {
-    "lapis-ai-host": "./bin/lapis-ai-host.mjs",
-    "lapis-mcp-shim": "./bin/lapis-mcp-shim.mjs"
-  },
   "scripts": {
     "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.json && node scripts/bundle-package.mjs",
-    "serve:local": "tsx scripts/serve-local.mjs",
-    "check": "pnpm spec:validate && pnpm check:types && pnpm docs:check",
+    "check": "pnpm spec:validate && pnpm check:types",
     "check:types": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "publint": "pnpm build && publint",
@@ -58,11 +52,7 @@
     "spec:build": "spec-validator build",
     "spec:check": "spec-validator check",
     "spec:first": "spec-validator first",
-    "spec:validate": "spec-validator validate",
-    "docs:check": "deno task docs:check",
-    "build:cli": "deno task build",
-    "build:cli:all": "deno task build:all",
-    "test:cli": "deno task test:cli"
+    "spec:validate": "spec-validator validate"
   },
   "exports": {
     ".": {

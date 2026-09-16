@@ -1,17 +1,12 @@
 # Architecture
 
-The package lives at the repository root and publishes built JavaScript and
-declaration files for the root library, a `./client` bridge, a vault-free
-`./file-tools` kernel, and the `lapis-ai-host` and `lapis-mcp-shim` CLIs.
-Disposable ACP model discovery returns raw ids plus structured labels and
-badges for consumers. The development-only `serve:local` package script seeds
-an ignored `.env` `LAPIS_AGENT_RUNTIME_TOKEN` when missing, then starts the
-existing `serve` command with that token. It is a non-authoritative execution
-transport: conversations, tool authority, and note content remain in the
-consuming application. The file-tools leaf supplies schemas and apply
-algorithms only. The stdio MCP projection launches the package-owned
-`bin/lapis-mcp-shim.mjs` entrypoint in both source and built consumers; that
-stable launcher delegates to the generated shim bundle.
+The package publishes built JavaScript and declarations for transport mechanics,
+a compatibility `./client` bridge and a vault-free `./file-tools` kernel.
+It has no operator executable or service lifecycle. The sibling AI Controller
+owns durable orchestration, the shared application SDK and standalone Deno CLI.
+Disposable model discovery remains transport-owned. The private MCP stdio shim
+is a subprocess helper, not an installed command; embedding executables may
+supply their own launcher and call the exported `runMcpShim` function.
 Protocol-v4 session configuration preserves that boundary: consumers request
 provider-neutral model or thinking values, while the executor selects
 advertised acpx keys and returns verified field results without exposing the
@@ -37,10 +32,10 @@ shape.
 | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AH-PKG-001 | Public `@lapismd/ai-host` MUST live at the repository root, publish built `dist` entrypoints for the root library, `./client`, `./file-tools`, `lapis-ai-host`, and `lapis-mcp-shim`, and expose `build`, `check`, and `test`. It MUST own acpx, agent-scoped model discovery, and standalone transport error propagation. Consumer plugins MUST NOT depend on it at runtime. `@lapis-notes/api` MAY depend on `./file-tools` only. Shared specification validation MUST remain a root-only npm development dependency. |
 | AH-PKG-002 | `@lapismd/ai-host` MUST own live local or authenticated-remote MCP transport through the official-SDK stdio shim, Streamable HTTP MCP, and token-authenticated broker. The `./file-tools` kernel MUST remain algorithm-only. The package MUST NOT become a durable tool, note-content, or conversation authority.                                                                                                                                                                                                       |
-| AH-PKG-003 | The `serve:local` package script MUST remain development-only. It MUST seed an ignored `.env` `LAPIS_AGENT_RUNTIME_TOKEN` when that file or key is missing, then start `lapis-ai-host serve` with that token. It MUST NOT add a public CLI subcommand or change production token generation.                                                                                                                                                                                                                            |
-| AH-PKG-006 | Embedding executables MUST be able to start AI Host without printing its bearer token, provide the complete stdio MCP launcher command, and invoke the package-owned MCP shim through an importable entrypoint. The standalone Node CLI and package-relative shim launcher MUST remain compatible.                                                                                                                                                                                                                      |
+| AH-PKG-003 | The package MUST NOT install operator commands, expose a standalone service entrypoint, or seed application credentials. AI Controller MUST own operator lifecycle and credential initialization.                                                                                                                                                                                                                                                                                                                       |
+| AH-PKG-006 | Embedding executables MUST be able to start AI Host without printing its bearer token, provide the complete stdio MCP launcher command, and invoke the package-owned MCP shim through an importable entrypoint. The private package-relative shim launcher MUST remain compatible; it MUST NOT be installed as a public command.                                                                                                                                                                                        |
 | AH-PKG-004 | Release automation MUST use Changesets for future version pull requests, rebuild `dist`, build and validate the selected npm tarball before publication, use npm trusted publishing through the `npm-production` environment after trusted-publisher configuration, and create `ai-host@<version>` GitHub tags/releases from the verified release manifest.                                                                                                                                                             |
-| AH-PKG-005 | The standalone host MUST remain a non-authoritative ACP execution transport. A controller profile MUST expose only registered ACP lifecycle, replay, permission and application-tool operations; Nostr identity, conversation routing, signer custody and publication policy remain consumer responsibilities.                                                                                                                                                                                                          |
+| AH-PKG-005 | The transport library MUST remain a non-authoritative ACP execution transport. A controller profile MUST expose only registered ACP lifecycle, replay, permission and application-tool operations; Nostr identity, conversation routing, signer custody and publication policy remain consumer responsibilities.                                                                                                                                                                                                        |
 
 | AH-PKG-007 | Built declarations MUST preserve typed public contracts under TypeScript NodeNext and Bundler resolution. Relative declaration imports MUST resolve to emitted ESM paths rather than silently degrading public types to `any`. |
 
