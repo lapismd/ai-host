@@ -738,9 +738,9 @@ export function createAgentRuntimeExecutor(options?: {
     },
 
     listAcpSessions() {
-      return [...new Set([...acpSessions.keys(), ...pendingAcpSessions.keys()])].map(
-        (id) => this.getAcpSessionStatus(id),
-      );
+      return [
+        ...new Set([...acpSessions.keys(), ...pendingAcpSessions.keys()]),
+      ].map((id) => this.getAcpSessionStatus(id));
     },
 
     getAcpSessionStatus(sessionId) {
@@ -1440,6 +1440,10 @@ function nativeProcessArgs(
     `mcp_servers.${bridge.name}.command=${JSON.stringify(bridge.command)}`,
     "-c",
     `mcp_servers.${bridge.name}.args=${JSON.stringify(bridge.args)}`,
+    "-c",
+    `mcp_servers.${bridge.name}.env_vars=${JSON.stringify(Object.keys(bridge.env))}`,
+    "-c",
+    `mcp_servers.${bridge.name}.required=true`,
   ];
 }
 

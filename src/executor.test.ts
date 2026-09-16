@@ -622,6 +622,52 @@ describe("agent runtime executor deferred ACP startup", () => {
 });
 
 describe("agent runtime MCP projection", () => {
+  it("forwards bridge environment names to required native MCP children without exposing credentials", async () => {
+    const executor = createAgentRuntimeExecutor();
+    let output = "";
+    let exited = false;
+    const toolSink = {
+      connectionId: "native-renderer",
+      sendRuntimeEvent: vi.fn(),
+      sendProcessMessage(message: { type: string; data?: string }) {
+        if (message.type === "stdout") output += message.data;
+        if (message.type === "exit") exited = true;
+      },
+      sendToolCall: vi.fn(),
+      sendToolCancel: vi.fn(),
+    };
+    try {
+      const { bridgeId } = await executor.openToolBridge(toolSink, {
+        bindingId: "native-binding",
+        conversationId: "native-conversation",
+        descriptors: [],
+      });
+      executor.spawnProcess(toolSink, {
+        command: process.execPath,
+        args: [
+          "-e",
+          `process.stdout.write(JSON.stringify({
+          args: process.argv.slice(1),
+          configured: ["LAPIS_TOOL_BRIDGE_URL", "LAPIS_TOOL_BRIDGE_ID", "LAPIS_TOOL_BRIDGE_TOKEN"].every(name => !!process.env[name]),
+          secretInArgs: process.argv.some(arg => arg.includes(process.env.LAPIS_TOOL_BRIDGE_TOKEN))
+        }))`,
+          "--",
+        ],
+        appToolBridgeId: bridgeId,
+      });
+      await vi.waitFor(() => expect(exited).toBe(true));
+      const captured = JSON.parse(output);
+      expect(captured.configured).toBe(true);
+      expect(captured.secretInArgs).toBe(false);
+      expect(captured.args).toContain(
+        'mcp_servers.lapis-tools.env_vars=["LAPIS_TOOL_BRIDGE_URL","LAPIS_TOOL_BRIDGE_ID","LAPIS_TOOL_BRIDGE_TOKEN"]',
+      );
+      expect(captured.args).toContain("mcp_servers.lapis-tools.required=true");
+    } finally {
+      await executor.close();
+    }
+  });
+
   it("removes workspace and MCP capabilities from restricted one-shot sessions", async () => {
     let projected: Parameters<CreateAcpxRuntime>[2] | undefined;
     const fake = createRuntime([]);
