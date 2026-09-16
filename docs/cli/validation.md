@@ -6,7 +6,7 @@ still derived from `package.json`; the pending minor changeset has not been appl
 ## Passed locally
 
 - `pnpm spec:check`: specification, complete package test lane, mdBook and spec-first.
-  Test result: 107 Vitest tests across 19 files; zero failures.
+  Test result: 109 Vitest tests across 19 files; zero failures.
 - `pnpm check`, `deno task check`, generated documentation equality, `pnpm build`.
 - `pnpm pack --pack-destination .release/cli-acceptance`: actual public tarball.
   The normal `packages:pack` command also passed but was a no-op because 0.1.0

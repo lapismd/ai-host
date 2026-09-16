@@ -22,3 +22,7 @@ Default configuration is `$XDG_CONFIG_HOME/<binary>/<instance>.json` (fallback
 `~/.local/state`) and a configuration-path hash to isolate custom configurations.
 CLI schemas are `<binary>.cli/1`; library-returned tokens remain available to
 embedding callers. `token show --json` is an explicit secret disclosure.
+
+External ACP argv arrays preserve literal argument bytes when resolving an
+installed executable. Host startup does not reinterpret the compiled binary as
+Node, including when a configured package launcher is missing (AH-OPS-008).

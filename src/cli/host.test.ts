@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { mkdtemp, writeFile, rm, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { runtimes } from "./host";
+import { runtimes, externalCommand } from "./host";
 import { context, effectiveConfig } from "./config";
 let temp: string | undefined;
 afterEach(async () => {
@@ -27,4 +27,26 @@ it("reports missing external agents without installing them and classifies inval
     code: "invalid_config",
     exitCode: 2,
   });
+});
+
+it("preserves literal argv bytes when resolving an installed external executable", async () => {
+  const script = "printf 'first\nsecond'\n";
+  expect(await externalCommand(["/bin/sh", "-c", script])).toEqual([
+    "/bin/sh",
+    "-c",
+    script,
+  ]);
+});
+
+it("preserves multiline arguments while disabling package-launch inference for absent commands", async () => {
+  vi.stubEnv("PATH", "");
+  const command = await externalCommand([
+    "npx",
+    "-y",
+    "@zed-industries/codex-acp",
+    "first\nsecond",
+  ]);
+  expect(command).toBe(
+    "'npx' '-y' '@zed-industries/codex-acp' 'first\nsecond'",
+  );
 });

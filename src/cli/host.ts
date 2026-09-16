@@ -43,6 +43,24 @@ function firstCommand(command: string | string[] | undefined): string {
         ?.slice(1)
         .find(Boolean) ?? "");
 }
+function quoteCommandPart(value: string): string {
+  return "'" + value.replaceAll("'", "'\\''") + "'";
+}
+export async function externalCommand(
+  command: string | string[],
+): Promise<string | string[]> {
+  const first = firstCommand(command);
+  const resolved = await executable(first);
+  // Keep argv intact. An absolute executable bypasses acpx's Node launcher inference.
+  if (Array.isArray(command) && resolved)
+    return [resolved, ...command.slice(1)];
+  // Quoting also bypasses that inference when a requested executable is absent.
+  return Array.isArray(command)
+    ? command.map(quoteCommandPart).join(" ")
+    : command.replace(/^(?:"[^"]+"|'[^']+'|\S+)/, () =>
+        quoteCommandPart(resolved ?? first),
+      );
+}
 export async function runtimes(config: HostConfig) {
   const registry = createAcpAgentRegistry(await definitions(config));
   return await Promise.all(
@@ -63,20 +81,8 @@ export async function startHost(
   onEvent: (event: HostEvent) => void,
 ): Promise<Host> {
   const entries = await definitions(config);
-  for (const entry of entries) {
-    const command = entry.command ?? [entry.id];
-    const first = firstCommand(command);
-    const resolved = (await executable(first)) ?? first;
-    // An explicitly quoted command bypasses acpx's built-in Node launcher inference.
-    // The external executable (including its shebang) owns its interpreter.
-    entry.command = Array.isArray(command)
-      ? [resolved, ...command.slice(1)]
-          .map((part) => JSON.stringify(part))
-          .join(" ")
-      : command.replace(/^(?:"[^"]+"|'[^']+'|\S+)/, () =>
-          JSON.stringify(resolved),
-        );
-  }
+  for (const entry of entries)
+    entry.command = await externalCommand(entry.command ?? [entry.id]);
   const invocation = currentSelfInvocation();
   const executor = createAgentRuntimeExecutor({
     agentRegistry: createAcpAgentRegistry(entries),
