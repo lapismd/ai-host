@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import { normalizeDeclarationImports } from "./declaration-imports.mjs";
 
 const packageRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -20,6 +21,8 @@ async function bundle(entry, outfile, options = {}) {
     ...options,
   });
 }
+
+await normalizeDeclarationImports(path.join(packageRoot, "dist"));
 
 await bundle("src/index.ts", "dist/index.js");
 await bundle("src/client.ts", "dist/client.js");
