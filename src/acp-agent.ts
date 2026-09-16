@@ -168,3 +168,12 @@ export function parseAcpAgentDefinitions(value: unknown): AcpAgentDefinition[] {
     };
   });
 }
+
+/** Return the same launch command used by the installed acpx runtime. */
+export async function resolveAcpAgentCommand(
+  agent: AcpAgentDefinition,
+): Promise<string | string[]> {
+  if (agent.command !== undefined) return cloneCommand(agent.command)!;
+  const { createAgentRegistry } = await import("acpx/runtime");
+  return createAgentRegistry().resolve(agent.id);
+}

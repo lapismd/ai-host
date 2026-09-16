@@ -32,3 +32,8 @@ inside this package.
 | AH-MCP-007 | An embedding executable MUST be able to supply the complete command and argument vector used to launch the stdio MCP shim. Credentials MUST remain in the child environment, and the default package-owned Node launcher MUST remain unchanged when no override is supplied.                                                                                                                                                                                                                                                                                                                                    |
 
 The executor exposes optional read-only session enumeration for the standalone operator CLI. It reuses live session status and does not expose content.
+
+Embedding controllers can resolve an agent launch command through the public library.
+Explicit argv remains unchanged; absent overrides use the installed acpx registry,
+including its configured adapter package range. Consumers must not invent an extra
+global binary requirement for the same registered agent.

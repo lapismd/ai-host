@@ -3,6 +3,7 @@ export {
   DEFAULT_ACP_AGENTS,
   parseAcpAgentDefinitions,
   resolveAcpAgent,
+  resolveAcpAgentCommand,
   type AcpAgentDefinition,
   type AcpAgentMcpTransport,
   type AcpAgentRegistry,

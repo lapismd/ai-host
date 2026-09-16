@@ -3,6 +3,7 @@ import {
   createAcpAgentRegistry,
   parseAcpAgentDefinitions,
   resolveAcpAgent,
+  resolveAcpAgentCommand,
 } from "./acp-agent";
 
 describe("ACP agent registry", () => {
@@ -91,4 +92,21 @@ describe("ACP agent registry", () => {
       parseAcpAgentDefinitions({ agents: [{ command: [1] }] }),
     ).toThrow(/command/i);
   });
+});
+
+it("exposes the runtime launcher defaults and preserves explicit argv", async () => {
+  const { createAgentRegistry: acpxRegistry } = await import("acpx/runtime");
+  const registry = createAcpAgentRegistry();
+  for (const agent of registry.list()) {
+    expect(await resolveAcpAgentCommand(agent)).toEqual(
+      acpxRegistry().resolve(agent.id),
+    );
+  }
+  const agent = {
+    ...registry.resolve("codex"),
+    command: ["custom-agent", "line\nbreak"],
+  };
+  const command = await resolveAcpAgentCommand(agent);
+  expect(command).toEqual(agent.command);
+  expect(command).not.toBe(agent.command);
 });
