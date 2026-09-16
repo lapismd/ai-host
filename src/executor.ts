@@ -240,6 +240,8 @@ export type AgentRuntimeExecutor = {
   ): Promise<AcpModelCatalog>;
   listAcpAgents(): { agents: AcpAgentCatalogEntry[] };
   getAcpSessionStatus(sessionId: string): AcpSessionStatus;
+  /** Read-only operational state; excludes conversation and tool content. */
+  listAcpSessions?(): AcpSessionStatus[];
   promptAcpSession(
     sink: AgentHostSink,
     sessionId: string,
@@ -733,6 +735,12 @@ export function createAgentRuntimeExecutor(options?: {
           mcpTransport,
         })),
       };
+    },
+
+    listAcpSessions() {
+      return [...new Set([...acpSessions.keys(), ...pendingAcpSessions.keys()])].map(
+        (id) => this.getAcpSessionStatus(id),
+      );
     },
 
     getAcpSessionStatus(sessionId) {

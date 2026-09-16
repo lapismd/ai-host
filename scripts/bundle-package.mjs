@@ -25,7 +25,7 @@ await bundle("src/index.ts", "dist/index.js");
 await bundle("src/client.ts", "dist/client.js");
 await bundle("src/file-tools/index.ts", "dist/file-tools/index.js");
 
-await bundle("src/cli.ts", "dist/cli.js", {
+await bundle("src/main.ts", "dist/cli.js", {
   banner: { js: "#!/usr/bin/env node" },
 });
 

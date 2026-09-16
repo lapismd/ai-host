@@ -13,3 +13,6 @@ tmp/
 AGENTS.override.md
 .cursor/
 .local/
+
+artifacts/
+.cli-build/

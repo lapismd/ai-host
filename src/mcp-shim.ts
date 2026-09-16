@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
+  type CallToolRequest,
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
@@ -145,7 +146,7 @@ export async function runMcpShim(): Promise<void> {
       },
     })),
   }));
-  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+  server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest, extra: { signal: AbortSignal }) => {
     return toMcpToolResult(
       await broker.call(
         request.params.name,

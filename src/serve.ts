@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { createAcpAgentRegistry, parseAcpAgentDefinitions } from "./acp-agent";
 import { createAgentRuntimeExecutor } from "./executor";
 import type { ServeArgs } from "./parse-cli";
+import type { AcpSessionStatus } from "./executor";
 import { generateToken } from "./token";
 import { startAgentRuntimeServer, type AgentRuntimeServer } from "./ws-server";
 
@@ -11,6 +12,7 @@ export type RunningAgentHost = {
   url: string;
   workspace: string;
   generatedToken: boolean;
+  inspect(): AcpSessionStatus[];
   disconnectClients(): void;
   close(): Promise<void>;
 };
@@ -21,6 +23,10 @@ export async function serveAgentHost(
     executor?: ReturnType<typeof createAgentRuntimeExecutor>;
     print?: (line: string) => void;
     printToken?: boolean;
+    onEvent?: (event: {
+      event: "started" | "stopped";
+      data: { url: string; workspace: string };
+    }) => void;
   },
 ): Promise<RunningAgentHost> {
   const provided = args.token?.trim() ?? "";
@@ -42,17 +48,16 @@ export async function serveAgentHost(
       )
     : undefined;
 
+  const executor =
+    options?.executor ??
+    createAgentRuntimeExecutor({ ...(agentRegistry ? { agentRegistry } : {}) });
   const server: AgentRuntimeServer = await startAgentRuntimeServer({
     port: args.port,
     bind: args.bind,
     token,
     workspace,
     origins: args.origins,
-    executor:
-      options?.executor ??
-      createAgentRuntimeExecutor({
-        ...(agentRegistry ? { agentRegistry } : {}),
-      }),
+    executor,
     profile: args.profile ?? "trusted",
   });
 
@@ -61,12 +66,17 @@ export async function serveAgentHost(
   print(`lapis-ai-host listening on ${url}`);
   if (options?.printToken !== false) print(`token: ${token}`);
 
+  options?.onEvent?.({ event: "started", data: { url, workspace } });
   return {
     token,
     url,
     workspace,
     generatedToken,
+    inspect: () => executor.listAcpSessions?.() ?? [],
     disconnectClients: () => server.disconnectClients(),
-    close: () => server.close(),
+    close: async () => {
+      await server.close();
+      options?.onEvent?.({ event: "stopped", data: { url, workspace } });
+    },
   };
 }

@@ -15,15 +15,16 @@ MUST update the mapped chapter in the same Jujutsu change.
 
 ## Change map
 
-| Protected area                                                                                                                     | Required chapter     |
-| ---------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| `src/serve.ts`, `src/parse-cli.ts`, `src/cli.ts`, `src/token.ts`                                                                   | `protocol.md`        |
-| `src/ws-server.ts`, `src/protocol.ts`, `src/replay-buffer.ts`, `src/client.ts`                                                     | `protocol.md`        |
-| `src/executor.ts`, `src/acp-agent.ts`, `src/acp-session-options.ts`, `src/acp-model-catalog.ts`                                    | `executor.md`        |
-| `src/mcp-shim.ts`, `src/mcp-shim-cli.ts`, `src/tool-bridge.ts`                                                                     | `executor.md`        |
-| `src/file-tools/`                                                                                                                  | `file-tools.md`      |
-| `package.json`, `src/index.ts`, `bin/`, `scripts/`, `.changeset/`, `.github/workflows/`, `CHANGELOG.md`, `LICENSE.md`, `README.md` | `architecture.md`    |
-| `spec-validator.config.mjs`, `AGENTS.md`, `pnpm-workspace.yaml`, `spec/book.toml`, `.gitignore`                                    | `spec-governance.md` |
+| Protected area                                                                                                                                            | Required chapter     |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| `src/serve.ts`, `src/parse-cli.ts`, `src/cli.ts`, `src/token.ts`                                                                                          | `protocol.md`        |
+| `src/ws-server.ts`, `src/protocol.ts`, `src/replay-buffer.ts`, `src/client.ts`                                                                            | `protocol.md`        |
+| `src/executor.ts`, `src/acp-agent.ts`, `src/acp-session-options.ts`, `src/acp-model-catalog.ts`                                                           | `executor.md`        |
+| `src/mcp-shim.ts`, `src/mcp-shim-cli.ts`, `src/tool-bridge.ts`                                                                                            | `executor.md`        |
+| `src/file-tools/`                                                                                                                                         | `file-tools.md`      |
+| `src/cli/**`, `src/cli.ts`, `src/main.ts`, `deno.json`, `deno.lock`, `docs/cli/**`, `scripts/build-cli.ts`, `scripts/docs-cli.ts`, `scripts/smoke-cli.ts` | `cli.md`             |
+| `package.json`, `src/index.ts`, `bin/`, `scripts/`, `.changeset/`, `.github/workflows/`, `CHANGELOG.md`, `LICENSE.md`, `README.md`                        | `architecture.md`    |
+| `spec-validator.config.mjs`, `AGENTS.md`, `pnpm-workspace.yaml`, `spec/book.toml`, `.gitignore`                                                           | `spec-governance.md` |
 
 The repository-owned validator configuration and pnpm workspace file remain
 governance inputs, but `@lapismd/spec-validator` itself is consumed as the
@@ -37,3 +38,5 @@ desktop, web, Storybook, and smoke supervisors; it does not authorize a second
 native desktop host. Its dependency guidance requires published LapisMD
 packages to resolve through npm semver ranges while source fixes stay owned by
 their source repositories.
+
+Standalone executable and operator CLI behavior is specified in [Standalone operator CLI](./cli.md). The CLI suppresses automatic token output; embedded library behavior remains compatible.

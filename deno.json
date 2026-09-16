@@ -1,0 +1,32 @@
+{
+  "nodeModulesDir": "none",
+  "compilerOptions": {
+    "strict": true,
+    "types": [
+      "npm:@types/node@22.20.1",
+      "npm:@types/ws@8.18.1"
+    ]
+  },
+  "tasks": {
+    "check": "deno check --sloppy-imports src/main.ts src/index.ts src/client.ts && deno task docs:check",
+    "test": "pnpm test",
+    "build": "deno run -A --sloppy-imports scripts/build-cli.ts",
+    "build:all": "deno run -A --sloppy-imports scripts/build-cli.ts --all",
+    "docs:check": "deno run -A --sloppy-imports scripts/docs-cli.ts --check",
+    "docs:write": "deno run -A --sloppy-imports scripts/docs-cli.ts",
+    "test:cli": "deno run -A --sloppy-imports scripts/smoke-cli.ts",
+    "spec:check": "pnpm spec:check"
+  },
+  "imports": {
+    "acpx/runtime": "npm:acpx@0.13.0/runtime",
+    "ws": "npm:ws@8.18.3",
+    "@modelcontextprotocol/sdk/server/index.js": "npm:@modelcontextprotocol/sdk@1.30.0/server/index.js",
+    "@modelcontextprotocol/sdk/server/stdio.js": "npm:@modelcontextprotocol/sdk@1.30.0/server/stdio.js",
+    "@modelcontextprotocol/sdk/server/streamableHttp.js": "npm:@modelcontextprotocol/sdk@1.30.0/server/streamableHttp.js",
+    "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js": "npm:@modelcontextprotocol/sdk@1.30.0/server/webStandardStreamableHttp.js",
+    "@modelcontextprotocol/sdk/types.js": "npm:@modelcontextprotocol/sdk@1.30.0/types.js"
+  },
+  "unstable": [
+    "sloppy-imports"
+  ]
+}
