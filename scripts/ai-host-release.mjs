@@ -471,6 +471,7 @@ function checkReleaseConfig() {
     "npm-production",
     "id-token: write",
     "pnpm checks:release",
+    "pnpm audit",
   ]) {
     if (!releaseWorkflow.includes(token)) {
       throw new Error(`release.yml is missing ${token}`);

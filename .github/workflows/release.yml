@@ -100,6 +100,7 @@ jobs:
           pnpm spec:check
           pnpm release:check
           pnpm packages:pack
+          pnpm audit
           pnpm checks:release
 
       - name: Plan exact unpublished version

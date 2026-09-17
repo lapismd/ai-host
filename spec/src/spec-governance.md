@@ -37,7 +37,9 @@ Jujutsu. Do not wait for a later user request. Its consumer guidance names Deno
 desktop, web, Storybook, and smoke supervisors; it does not authorize a second
 native desktop host. Its dependency guidance requires published LapisMD
 packages to resolve through npm semver ranges while source fixes stay owned by
-their source repositories.
+their source repositories. The same guidance requires `pnpm audit` on every
+check. `pnpm-workspace.yaml` MAY record overrides for patched transitive
+advisories that the audit gate requires.
 
 Standalone executable and operator CLI behavior is specified in [Standalone operator CLI](./cli.md). The CLI suppresses automatic token output; embedded library behavior remains compatible.
 

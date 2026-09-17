@@ -38,8 +38,13 @@ shape.
 | AH-PKG-005 | The transport library MUST remain a non-authoritative ACP execution transport. A controller profile MUST expose only registered ACP lifecycle, replay, permission and application-tool operations; Nostr identity, conversation routing, signer custody and publication policy remain consumer responsibilities.                                                                                                                                                                     |
 
 | AH-PKG-007 | Built declarations MUST preserve typed public contracts under TypeScript NodeNext and Bundler resolution. Relative declaration imports MUST resolve to emitted ESM paths rather than silently degrading public types to `any`. |
+| AH-PKG-008 | Root `check` and `checks:release` MUST run `pnpm audit` against the committed lockfile. Release revalidation MUST invoke that audit explicitly. Fixable findings MUST be resolved with declared ranges or workspace overrides in the same change. |
 
 Operator migration is specified in [the retired CLI boundary](./cli.md). AI
 Controller owns runnable service commands; the private MCP shim remains an
 importable execution helper. The next public version records that boundary as a
 minor release so npm no longer advertises the retired `lapis-ai-host` command.
+
+Root validation runs `pnpm audit` before typechecking so a lockfile or override
+change cannot land with a known-vulnerable graph. Workspace overrides pin
+transitive patches such as Vitest 4.1.11.

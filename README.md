@@ -12,7 +12,7 @@ legacy transport clients, and `./file-tools` for algorithm-only file helpers.
 The private MCP shim is launched by the executor or supplied by an embedding
 executable through `shimCommand`; it is not installed on PATH.
 
-Run `pnpm spec:check`, `pnpm check`, `pnpm test`, and `pnpm build` to validate.
+Run `pnpm spec:check`, `pnpm audit`, `pnpm check`, `pnpm test`, and `pnpm build` to validate.
 Use `pnpm packages:pack` to verify the public npm artifact without publishing.
 Published manifests use npm semver ranges. Local pre-release consumer validation
 may use an explicitly documented tarball hook.

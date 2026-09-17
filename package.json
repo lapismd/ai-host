@@ -34,7 +34,8 @@
   },
   "scripts": {
     "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.json && node scripts/bundle-package.mjs",
-    "check": "pnpm spec:validate && pnpm check:types",
+    "audit": "pnpm audit",
+    "check": "pnpm audit && pnpm spec:validate && pnpm check:types",
     "check:types": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "publint": "pnpm build && publint",
@@ -88,6 +89,6 @@
     "publint": "^0.3.24",
     "tsx": "^4.23.1",
     "typescript": "~5.9.3",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.11"
   }
 }

@@ -46,7 +46,7 @@ specification change is accepted.
 2. Read the relevant specification page and requirement IDs.
 3. Update the specification and verification map before implementation.
 4. Add focused regression evidence for the changed boundary.
-5. Run `pnpm spec:check`, `pnpm check`, `pnpm test`, and `pnpm build`.
+5. Run `pnpm spec:check`, `pnpm check`, `pnpm test`, and `pnpm build`. `pnpm check` includes `pnpm audit`; do not skip that gate or add an unrecorded ignore.
 6. Commit the verified slice with Jujutsu. This is a standing request; do not
    wait for the user to ask.
 
