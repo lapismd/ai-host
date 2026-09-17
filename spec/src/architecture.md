@@ -39,4 +39,7 @@ shape.
 
 | AH-PKG-007 | Built declarations MUST preserve typed public contracts under TypeScript NodeNext and Bundler resolution. Relative declaration imports MUST resolve to emitted ESM paths rather than silently degrading public types to `any`. |
 
-Operator migration is specified in [the retired CLI boundary](./cli.md). AI Controller owns runnable service commands; the private MCP shim remains an importable execution helper.
+Operator migration is specified in [the retired CLI boundary](./cli.md). AI
+Controller owns runnable service commands; the private MCP shim remains an
+importable execution helper. The next public version records that boundary as a
+minor release so npm no longer advertises the retired `lapis-ai-host` command.

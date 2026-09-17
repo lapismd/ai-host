@@ -2,4 +2,8 @@
 "@lapismd/ai-host": minor
 ---
 
-Add standalone Deno executables, operator commands, JSON output, generated help, and user services. CLI tokens now require explicit `token show`; npm library and protocol compatibility are retained.
+Retire the standalone operator CLI and service lifecycle in favor of AI
+Controller. Keep embeddable host and MCP shim launch hooks, controller-safe ACP
+catalogs, persisted-session discovery, restart-safe runtime events, NodeNext
+declaration paths, and native MCP credential forwarding. The private MCP shim
+remains an implementation helper, not a public PATH command.
