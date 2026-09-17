@@ -28,7 +28,7 @@ export function portableSessionBootstrap(
   const value = metadata?.sessionBootstrap;
   if (typeof value !== "string") return undefined;
   const bootstrap = value.trim();
-  if (!bootstrap.includes("<lapis_context>")) return undefined;
+  if (!bootstrap) return undefined;
   if (hasHostFilesystemPath(bootstrap)) return undefined;
   return bootstrap;
 }

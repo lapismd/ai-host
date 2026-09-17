@@ -40,7 +40,7 @@ export default defineConfig(tableRequirements(), {
     specFirst: {
       mode: "mapped",
       canonicalPattern:
-        "^spec/src/(?:index|architecture|protocol|executor|file-tools|spec-governance)\\.md$",
+        "^spec/src/(?:cli|index|architecture|protocol|executor|file-tools|spec-governance)\\.md$",
       ignore: [
         "(^|/)node_modules/",
         "(^|/)(?:dist|build)/",
@@ -49,6 +49,11 @@ export default defineConfig(tableRequirements(), {
         "\\.(?:spec|test)\\.[cm]?[jt]sx?$",
       ],
       rules: [
+        {
+          pattern:
+            "^(?:src/cli/|src/cli\\.ts$|src/main\\.ts$|deno\\.(?:json|lock)$|docs/cli/|scripts/(?:build-cli|check-cli|smoke-cli|docs-cli)\\.ts$)",
+          chapters: ["spec/src/cli.md"],
+        },
         {
           pattern: "^src/(?:serve|parse-cli|cli|token)\\.ts$",
           chapters: ["spec/src/protocol.md"],
@@ -63,7 +68,7 @@ export default defineConfig(tableRequirements(), {
           chapters: ["spec/src/executor.md"],
         },
         {
-          pattern: "^src/(?:mcp-shim|tool-bridge)\\.ts$",
+          pattern: "^src/(?:mcp-shim(?:-cli)?|tool-bridge)\\.ts$",
           chapters: ["spec/src/executor.md"],
         },
         {
@@ -82,7 +87,7 @@ export default defineConfig(tableRequirements(), {
         },
       ],
       protected: [
-        "^(?:src/|package\\.json$|bin/|scripts/|\\.changeset/|\\.github/workflows/|CHANGELOG\\.md$|LICENSE\\.md$|README\\.md$|\\.gitignore$|spec-validator\\.config\\.mjs$|AGENTS\\.md$|pnpm-workspace\\.yaml$)",
+        "^(?:deno\\.(?:json|lock)$|docs/cli/|src/|package\\.json$|bin/|scripts/|\\.changeset/|\\.github/workflows/|CHANGELOG\\.md$|LICENSE\\.md$|README\\.md$|\\.gitignore$|spec-validator\\.config\\.mjs$|AGENTS\\.md$|pnpm-workspace\\.yaml$)",
       ],
     },
   },

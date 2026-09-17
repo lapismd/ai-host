@@ -6,13 +6,13 @@ import {
 } from "./acp-session-options";
 
 describe("resolveAcpAgent", () => {
-  it("prefers the first-class agent and defaults unknown names to codex", () => {
-    expect(resolveAcpAgent({ agent: "cursor" })).toBe("cursor");
-    expect(resolveAcpAgent({ metadata: { acpAgent: "cursor" } })).toBe(
+  it("prefers the first-class agent and defaults a missing value to codex", () => {
+    expect(resolveAcpAgent({ agent: "cursor" }).id).toBe("cursor");
+    expect(resolveAcpAgent({ metadata: { acpAgent: "cursor" } }).id).toBe(
       "cursor",
     );
-    expect(resolveAcpAgent({ agent: "claude" })).toBe("codex");
-    expect(resolveAcpAgent({})).toBe("codex");
+    expect(() => resolveAcpAgent({ agent: "claude" })).toThrow(/not enabled/i);
+    expect(resolveAcpAgent({}).id).toBe("codex");
   });
 });
 
@@ -79,12 +79,27 @@ describe("toAcpxSessionOptions", () => {
     });
   });
 
-  it("omits path-bearing bootstrap text", () => {
+  it("accepts neutral controller bootstrap text without a Lapis marker", () => {
     expect(
       toAcpxSessionOptions({
         metadata: {
           sessionBootstrap:
-            "<lapis_context>/Users/steve/vault</lapis_context>",
+            "You are operating through a Nostr controller. Explicit writes require approval.",
+        },
+      }),
+    ).toEqual({
+      systemPrompt: {
+        append:
+          "You are operating through a Nostr controller. Explicit writes require approval.",
+      },
+    });
+  });
+
+  it("omits path-bearing bootstrap text", () => {
+    expect(
+      toAcpxSessionOptions({
+        metadata: {
+          sessionBootstrap: "<lapis_context>/Users/steve/vault</lapis_context>",
         },
       }),
     ).toEqual({});

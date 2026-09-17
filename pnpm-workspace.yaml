@@ -5,3 +5,6 @@ linkWorkspacePackages: true
 
 onlyBuiltDependencies:
   - esbuild
+overrides:
+  "@vitest/mocker@>=2.1.0 <4.1.11": ">=4.1.11"
+  vitest@>=2.1.0 <4.1.11: ">=4.1.11"

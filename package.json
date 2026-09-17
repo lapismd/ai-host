@@ -1,11 +1,12 @@
 {
   "name": "@lapismd/ai-host",
   "version": "0.1.0",
-  "description": "Standalone ACP process host, WebSocket server, and MCP tool bridge for LapisMD consumers",
-  "license": "AGPL-3.0-or-later",
+  "description": "ACP and process transport mechanics, MCP bridge and portable file tools",
+  "license": "Apache-2.0",
   "packageManager": "pnpm@10.32.1",
   "engines": {
-    "node": ">=22"
+    "node": ">=22",
+    "deno": ">=2.9.5"
   },
   "type": "module",
   "main": "./dist/index.js",
@@ -31,14 +32,10 @@
     "access": "public",
     "registry": "https://registry.npmjs.org"
   },
-  "bin": {
-    "lapis-ai-host": "./bin/lapis-ai-host.mjs",
-    "lapis-mcp-shim": "./bin/lapis-mcp-shim.mjs"
-  },
   "scripts": {
     "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.json && node scripts/bundle-package.mjs",
-    "serve:local": "tsx scripts/serve-local.mjs",
-    "check": "pnpm spec:validate && pnpm check:types",
+    "audit": "pnpm audit",
+    "check": "pnpm audit && pnpm spec:validate && pnpm check:types",
     "check:types": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "publint": "pnpm build && publint",
@@ -77,7 +74,7 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "acpx": "^0.13.0",
     "ws": "^8.18.3"
   },
@@ -87,11 +84,11 @@
     "@lapismd/spec-validator": "0.1.0",
     "@types/node": "^22.10.5",
     "@types/ws": "^8.18.1",
-    "esbuild": "^0.27.4",
+    "esbuild": "^0.28.2",
     "prettier": "^3.7.4",
     "publint": "^0.3.24",
     "tsx": "^4.23.1",
     "typescript": "~5.9.3",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.11"
   }
 }

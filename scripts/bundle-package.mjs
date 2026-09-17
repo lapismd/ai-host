@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import { normalizeDeclarationImports } from "./declaration-imports.mjs";
 
 const packageRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -21,16 +22,14 @@ async function bundle(entry, outfile, options = {}) {
   });
 }
 
+await normalizeDeclarationImports(path.join(packageRoot, "dist"));
+
 await bundle("src/index.ts", "dist/index.js");
 await bundle("src/client.ts", "dist/client.js");
 await bundle("src/file-tools/index.ts", "dist/file-tools/index.js");
 
-await bundle("src/cli.ts", "dist/cli.js", {
+await bundle("src/mcp-shim-cli.ts", "dist/mcp-shim.js", {
   banner: { js: "#!/usr/bin/env node" },
 });
 
-await bundle("src/mcp-shim.ts", "dist/mcp-shim.js", {
-  banner: { js: "#!/usr/bin/env node" },
-});
-
-console.log("[ai-host] package, CLI, and MCP shim bundles written");
+console.log("[ai-host] transport library and private MCP shim bundles written");

@@ -17,6 +17,8 @@ import type { ToolBridgeCall, ToolBridgeCancel } from "./tool-bridge";
 export type AgentRuntimeAttachConfig = {
   url: string;
   token: string;
+  manualAcknowledgement?: boolean;
+  replayCursors?: Array<{ sessionId: string; afterSequence: number }>;
 };
 
 export type AgentRuntimeBridge = {
@@ -30,6 +32,7 @@ export type AgentRuntimeBridge = {
     };
   };
   invoke<T>(command: string, payload?: Record<string, unknown>): Promise<T>;
+  acknowledgeAgentRuntimeEvent(sessionId: string, sequence: number): void;
   dispose(): void;
   toFileUrl(path: string): string;
   onAgentRuntimeEvent?(
@@ -93,7 +96,13 @@ export function createAgentRuntimeBridge(
   const toolCancelListeners = new Set<(event: ToolBridgeCancel) => void>();
   const activeToolCalls = new Map<string, ToolBridgeCall>();
   const activeToolBridges = new Set<string>();
-  const activeSessions = new Map<string, number>();
+  const activeSessions = new Map<string, number>(
+    (options.replayCursors ?? []).map((cursor) => [
+      cursor.sessionId,
+      cursor.afterSequence,
+    ]),
+  );
+  const receivedSessions = new Map(activeSessions);
   const replayGapSequences = new Map<string, number>();
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
@@ -128,14 +137,20 @@ export function createAgentRuntimeBridge(
     const record = parsed as Record<string, unknown>;
     if (record.type === "agent-runtime-event") {
       const frame = parsed as RuntimeEventFrame;
-      const previous = activeSessions.get(frame.event.sessionId);
+      const previous = receivedSessions.get(frame.event.sessionId);
       if (previous != null && frame.event.sequence <= previous) return;
       if (previous != null && frame.event.sequence > previous + 1) {
-        activeSessions.set(frame.event.sessionId, frame.event.sequence);
+        receivedSessions.set(frame.event.sessionId, frame.event.sequence);
+        if (!options.manualAcknowledgement) {
+          activeSessions.set(frame.event.sessionId, frame.event.sequence);
+        }
         notifyReplayGap(frame.event.sessionId, previous, frame.event.sequence);
         return;
       }
-      activeSessions.set(frame.event.sessionId, frame.event.sequence);
+      receivedSessions.set(frame.event.sessionId, frame.event.sequence);
+      if (!options.manualAcknowledgement) {
+        activeSessions.set(frame.event.sessionId, frame.event.sequence);
+      }
       for (const listener of runtimeListeners) listener(frame.event);
       return;
     }
@@ -216,7 +231,9 @@ export function createAgentRuntimeBridge(
     if (activeToolBridges.size === 0) return;
     for (const [sessionId, previous] of activeSessions) {
       const sequence = previous + 1;
-      activeSessions.set(sessionId, sequence);
+      receivedSessions.set(sessionId, sequence);
+      if (!options.manualAcknowledgement)
+        activeSessions.set(sessionId, sequence);
       for (const listener of runtimeListeners) {
         listener({
           sessionId,
@@ -246,141 +263,145 @@ export function createAgentRuntimeBridge(
     if (!connectPromise) {
       connectPromise = new Promise<void>((resolve, reject) => {
         const next = new WebSocket(options.url);
-      socket = next;
-      const helloId = nextMessageId();
-      let finished = false;
-      let ready = false;
-      const fail = (error: Error) => {
-        if (finished) return;
-        finished = true;
-        clearTimeout(timer);
-        next.close();
-        if (socket === next) socket = null;
-        connectPromise = null;
-        reject(error);
-        scheduleReconnect();
-      };
-      const timer = setTimeout(() => {
-        fail(new Error(`Agent-runtime connection timed out: ${options.url}`));
-      }, 5_000);
-      const onHandshake = (event: MessageEvent) => {
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(String(event.data));
-        } catch {
-          fail(new Error("Invalid agent-runtime handshake"));
-          return;
-        }
-        if (
-          parsed &&
-          typeof parsed === "object" &&
-          (parsed as HelloOk).type === "hello.ok" &&
-          (parsed as HelloOk).id === helloId &&
-          Number.isInteger((parsed as HelloOk).protocol) &&
-          (parsed as HelloOk).protocol >= MIN_AGENT_RUNTIME_PROTOCOL &&
-          (parsed as HelloOk).protocol <= AGENT_RUNTIME_PROTOCOL
-        ) {
-          negotiatedProtocol = (parsed as HelloOk).protocol;
-          agentRuntimeCapability.details.protocolVersion = String(
-            negotiatedProtocol,
-          );
-          agentRuntimeCapability.details.appTools =
-            negotiatedProtocol >= 3 ? "stdio-mcp" : "unavailable";
-          agentRuntimeCapability.details.sessionConfiguration =
-            negotiatedProtocol >= 4 ? "configure" : "unavailable";
-          next.removeEventListener("message", onHandshake);
-          next.addEventListener("message", (later) => {
-            handleFrame(String(later.data));
-          });
-          const cursors = [...activeSessions].map(
-            ([sessionId, afterSequence]) => ({ sessionId, afterSequence }),
-          );
-          const finish = () => {
-            if (finished) return;
-            finished = true;
-            ready = true;
-            clearTimeout(timer);
-            resolve();
-          };
-          if (cursors.length === 0) {
-            finish();
+        socket = next;
+        const helloId = nextMessageId();
+        let finished = false;
+        let ready = false;
+        const fail = (error: Error) => {
+          if (finished) return;
+          finished = true;
+          clearTimeout(timer);
+          next.close();
+          if (socket === next) socket = null;
+          connectPromise = null;
+          reject(error);
+          scheduleReconnect();
+        };
+        const timer = setTimeout(() => {
+          fail(new Error(`Agent-runtime connection timed out: ${options.url}`));
+        }, 5_000);
+        const onHandshake = (event: MessageEvent) => {
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(String(event.data));
+          } catch {
+            fail(new Error("Invalid agent-runtime handshake"));
             return;
           }
-          const id = nextMessageId();
-          const subscribed = new Promise<RuntimeReplaySubscription[]>(
-            (resolveSubscribe, rejectSubscribe) => {
-              pending.set(id, {
-                resolve: (value) =>
-                  resolveSubscribe(value as RuntimeReplaySubscription[]),
-                reject: rejectSubscribe,
-              });
-              next.send(
-                JSON.stringify({
-                  id,
-                  command: "desktop_agent_runtime_subscribe",
-                  payload: { sessions: cursors },
-                }),
-              );
-            },
-          );
-          void subscribed.then((results) => {
-            for (const result of results) {
-              const previous = activeSessions.get(result.sessionId) ?? 0;
-              if (result.gap) {
-                const interruptedSequence = Math.max(
-                  result.latestSequence,
-                  previous + 1,
-                );
-                activeSessions.set(result.sessionId, interruptedSequence);
-                notifyReplayGap(
-                  result.sessionId,
-                  previous,
-                  interruptedSequence,
-                );
-              }
+          if (
+            parsed &&
+            typeof parsed === "object" &&
+            (parsed as HelloOk).type === "hello.ok" &&
+            (parsed as HelloOk).id === helloId &&
+            Number.isInteger((parsed as HelloOk).protocol) &&
+            (parsed as HelloOk).protocol >= MIN_AGENT_RUNTIME_PROTOCOL &&
+            (parsed as HelloOk).protocol <= AGENT_RUNTIME_PROTOCOL
+          ) {
+            negotiatedProtocol = (parsed as HelloOk).protocol;
+            agentRuntimeCapability.details.protocolVersion =
+              String(negotiatedProtocol);
+            agentRuntimeCapability.details.appTools =
+              negotiatedProtocol >= 3 ? "stdio-mcp" : "unavailable";
+            agentRuntimeCapability.details.sessionConfiguration =
+              negotiatedProtocol >= 4 ? "configure" : "unavailable";
+            next.removeEventListener("message", onHandshake);
+            next.addEventListener("message", (later) => {
+              handleFrame(String(later.data));
+            });
+            const cursors = [...activeSessions].map(
+              ([sessionId, afterSequence]) => ({ sessionId, afterSequence }),
+            );
+            const finish = () => {
+              if (finished) return;
+              finished = true;
+              ready = true;
+              clearTimeout(timer);
+              resolve();
+            };
+            if (cursors.length === 0) {
+              finish();
+              return;
             }
-            finish();
-          }, fail);
-          return;
-        }
-        if (isHelloRequest(parsed)) {
-          fail(new Error("Unexpected hello from agent-runtime host"));
-          return;
-        }
-        fail(new Error("Agent-runtime handshake failed"));
-      };
-      next.addEventListener("open", () => {
-        next.send(
-          JSON.stringify({ id: helloId, type: "hello", token: options.token }),
-        );
-      });
-      next.addEventListener("message", onHandshake);
-      next.addEventListener("error", () => {
-        fail(new Error("Agent-runtime socket error"));
-      });
-      next.addEventListener("close", (event) => {
-        if (!ready) {
-          fail(
-            new Error(
-              event.reason ||
-                (event.code >= 4000
-                  ? "Agent-runtime authentication failed"
-                  : "Agent-runtime connection closed"),
-            ),
+            const id = nextMessageId();
+            const subscribed = new Promise<RuntimeReplaySubscription[]>(
+              (resolveSubscribe, rejectSubscribe) => {
+                pending.set(id, {
+                  resolve: (value) =>
+                    resolveSubscribe(value as RuntimeReplaySubscription[]),
+                  reject: rejectSubscribe,
+                });
+                next.send(
+                  JSON.stringify({
+                    id,
+                    command: "desktop_agent_runtime_subscribe",
+                    payload: { sessions: cursors },
+                  }),
+                );
+              },
+            );
+            void subscribed.then((results) => {
+              for (const result of results) {
+                const previous = activeSessions.get(result.sessionId) ?? 0;
+                if (result.gap) {
+                  const interruptedSequence = Math.max(
+                    result.latestSequence,
+                    previous + 1,
+                  );
+                  activeSessions.set(result.sessionId, interruptedSequence);
+                  receivedSessions.set(result.sessionId, interruptedSequence);
+                  notifyReplayGap(
+                    result.sessionId,
+                    previous,
+                    interruptedSequence,
+                  );
+                }
+              }
+              finish();
+            }, fail);
+            return;
+          }
+          if (isHelloRequest(parsed)) {
+            fail(new Error("Unexpected hello from agent-runtime host"));
+            return;
+          }
+          fail(new Error("Agent-runtime handshake failed"));
+        };
+        next.addEventListener("open", () => {
+          next.send(
+            JSON.stringify({
+              id: helloId,
+              type: "hello",
+              token: options.token,
+            }),
           );
-          return;
-        }
-        const message = event.reason || "Agent-runtime connection closed";
-        const error = new Error(message);
-        for (const [id, waiter] of pending) {
-          pending.delete(id);
-          waiter.reject(error);
-        }
-        cancelDisconnectedToolCalls();
-        if (socket === next) socket = null;
-        connectPromise = null;
-        scheduleReconnect();
-      });
+        });
+        next.addEventListener("message", onHandshake);
+        next.addEventListener("error", () => {
+          fail(new Error("Agent-runtime socket error"));
+        });
+        next.addEventListener("close", (event) => {
+          if (!ready) {
+            fail(
+              new Error(
+                event.reason ||
+                  (event.code >= 4000
+                    ? "Agent-runtime authentication failed"
+                    : "Agent-runtime connection closed"),
+              ),
+            );
+            return;
+          }
+          const message = event.reason || "Agent-runtime connection closed";
+          const error = new Error(message);
+          for (const [id, waiter] of pending) {
+            pending.delete(id);
+            waiter.reject(error);
+          }
+          cancelDisconnectedToolCalls();
+          if (socket === next) socket = null;
+          connectPromise = null;
+          scheduleReconnect();
+        });
       });
     }
     await connectPromise;
@@ -408,10 +429,11 @@ export function createAgentRuntimeBridge(
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       throw new Error("Agent-runtime socket is not open");
     }
+    const commandPayload = continuationPayload(command, payload);
     const id = nextMessageId();
     const result = await new Promise<unknown>((resolve, reject) => {
       pending.set(id, { resolve, reject });
-      socket!.send(JSON.stringify({ id, command, payload }));
+      socket!.send(JSON.stringify({ id, command, payload: commandPayload }));
     });
     if (command === "desktop_agent_tools_open") {
       const bridgeId = String(
@@ -437,10 +459,12 @@ export function createAgentRuntimeBridge(
         : "";
     if (command === "desktop_agent_acp_start" && sessionId) {
       if (!activeSessions.has(sessionId)) activeSessions.set(sessionId, 0);
+      if (!receivedSessions.has(sessionId)) receivedSessions.set(sessionId, 0);
     }
     if (command === "desktop_agent_acp_close") {
       const closedSessionId = String(payload?.sessionId ?? "");
       activeSessions.delete(closedSessionId);
+      receivedSessions.delete(closedSessionId);
       replayGapSequences.delete(closedSessionId);
       if (activeSessions.size === 0 && reconnectTimer) {
         clearTimeout(reconnectTimer);
@@ -450,16 +474,43 @@ export function createAgentRuntimeBridge(
     return result as T;
   }
 
+  function continuationPayload(
+    command: string,
+    payload: Record<string, unknown> | undefined,
+  ): Record<string, unknown> | undefined {
+    if (command !== "desktop_agent_acp_start") return payload;
+    const sessionId = String(payload?.sessionId ?? "");
+    const sequenceBase = activeSessions.get(sessionId);
+    if (!sessionId || sequenceBase === undefined) return payload;
+    return { ...payload, sequenceBase };
+  }
+
   return {
     runtime: "deno-desktop",
     capabilities: {
       "agent-runtime": agentRuntimeCapability,
     },
     invoke,
+    acknowledgeAgentRuntimeEvent(sessionId, sequence) {
+      if (!Number.isSafeInteger(sequence) || sequence < 0) {
+        throw new Error(
+          "Agent-runtime acknowledgement requires a valid sequence",
+        );
+      }
+      const received = receivedSessions.get(sessionId);
+      if (received === undefined || sequence > received) {
+        throw new Error(
+          `Cannot acknowledge unreceived sequence for ${sessionId}`,
+        );
+      }
+      const acknowledged = activeSessions.get(sessionId) ?? 0;
+      if (sequence > acknowledged) activeSessions.set(sessionId, sequence);
+    },
     dispose() {
       disposed = true;
       cancelDisconnectedToolCalls();
       activeSessions.clear();
+      receivedSessions.clear();
       replayGapSequences.clear();
       toolCallListeners.clear();
       toolCancelListeners.clear();

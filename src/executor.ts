@@ -3,7 +3,12 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolveAcpAgent } from "./acp-agent";
+import {
+  createAcpAgentRegistry,
+  resolveAcpAgent,
+  type AcpAgentDefinition,
+  type AcpAgentRegistry,
+} from "./acp-agent";
 import type {
   NativeAgentProcessMessage,
   NativeAgentRuntimeEvent,
@@ -51,6 +56,7 @@ export type SpawnPayload = {
 
 export type AcpStartPayload = {
   sessionId?: string;
+  sequenceBase?: number;
   workspace?: string;
   agent?: string;
   model?: { provider?: string; model?: string };
@@ -79,11 +85,7 @@ export type AcpMcpServer =
 
 export type AcpPermissionDecision = {
   outcome:
-    | "allow_once"
-    | "allow_always"
-    | "reject_once"
-    | "reject_always"
-    | "cancel";
+    "allow_once" | "allow_always" | "reject_once" | "reject_always" | "cancel";
 };
 
 export type AcpModelCatalog = {
@@ -91,6 +93,35 @@ export type AcpModelCatalog = {
   currentModel?: string;
   models: string[];
   entries: AcpModelEntry[];
+  configOptions: AcpConfigOption[];
+};
+
+export type AcpConfigOption = {
+  id: string;
+  name: string;
+  description?: string;
+  category?: string;
+  type: "select" | "boolean";
+  currentValue: string | boolean;
+  options?: Array<{ value: string; name: string; description?: string }>;
+};
+
+export type AcpAgentCatalogEntry = {
+  id: string;
+  label: string;
+  mcpTransport: "stdio" | "http";
+};
+
+export type AcpSessionStatus = {
+  sessionId: string;
+  state: "initializing" | "idle" | "running" | "missing";
+  runId?: string;
+  latestSequence: number;
+  pendingPermissions: Array<{
+    requestId: string;
+    expiresAt?: number;
+    options: string[];
+  }>;
 };
 
 export type AcpConfigurationFieldResult = {
@@ -144,12 +175,15 @@ export type AcpxRuntimeLike = {
       currentModelId?: string;
       availableModelIds?: string[];
     };
+    details?: {
+      configOptions?: unknown;
+      [key: string]: unknown;
+    };
   }>;
   getCapabilities?(input: {
     handle: AcpRuntimeHandle;
   }):
-    | Promise<{ configOptionKeys?: string[] }>
-    | { configOptionKeys?: string[] };
+    Promise<{ configOptionKeys?: string[] }> | { configOptionKeys?: string[] };
   setConfigOption?(input: {
     handle: AcpRuntimeHandle;
     key: string;
@@ -163,11 +197,26 @@ export type AcpxRuntimeLike = {
   }): Promise<void>;
 };
 
+type PendingAcpApproval = ((decision: AcpPermissionDecision) => void) & {
+  connectionId?: string;
+  disconnectTimer?: ReturnType<typeof setTimeout>;
+  expiresAt?: number;
+  options?: string[];
+  timeout?: ReturnType<typeof setTimeout>;
+};
+
+export type CreateAcpxRuntimeContext = {
+  agent: AcpAgentDefinition;
+  connectionId?: string;
+  permissionTimeoutMs: number;
+};
+
 export type CreateAcpxRuntime = (
   sink: AgentRuntimeInputSink,
   sessionId: string,
   payload: AcpStartPayload,
-  pendingApprovals: Map<string, (decision: AcpPermissionDecision) => void>,
+  pendingApprovals: Map<string, PendingAcpApproval>,
+  context: CreateAcpxRuntimeContext,
 ) => Promise<AcpxRuntimeLike>;
 
 export type AgentRuntimeExecutor = {
@@ -187,8 +236,12 @@ export type AgentRuntimeExecutor = {
   ): { sessionId: string };
   listAcpModels(
     sink: AgentHostSink,
-    payload: Pick<AcpStartPayload, "workspace" | "agent">,
+    payload: Pick<AcpStartPayload, "workspace" | "agent" | "sessionId">,
   ): Promise<AcpModelCatalog>;
+  listAcpAgents(): { agents: AcpAgentCatalogEntry[] };
+  getAcpSessionStatus(sessionId: string): AcpSessionStatus;
+  /** Read-only operational state; excludes conversation and tool content. */
+  listAcpSessions?(): AcpSessionStatus[];
   promptAcpSession(
     sink: AgentHostSink,
     sessionId: string,
@@ -199,7 +252,9 @@ export type AgentRuntimeExecutor = {
     sessionId: string,
     text: string,
   ): { runId: string };
-  configureAcpSession(payload: AcpConfigurePayload): Promise<AcpConfigureResult>;
+  configureAcpSession(
+    payload: AcpConfigurePayload,
+  ): Promise<AcpConfigureResult>;
   cancelAcpSession(sessionId: string): Promise<void>;
   closeAcpSession(sessionId: string): Promise<void>;
   respondAcpSession(
@@ -219,20 +274,33 @@ export type AgentRuntimeExecutor = {
 
 export function createAgentRuntimeExecutor(options?: {
   createAcpxRuntime?: CreateAcpxRuntime;
+  agentRegistry?: AcpAgentRegistry;
+  permissionTimeoutMs?: number;
+  disconnectGraceMs?: number;
   toolBridgeBroker?: ToolBridgeBroker;
   toolBridgeOptions?: ToolBridgeBrokerOptions;
 }): AgentRuntimeExecutor {
   const processes = new Map<string, ChildProcessWithoutNullStreams>();
-  const processBridges = new Map<string, { connectionId: string; bridgeId: string }>();
+  const processBridges = new Map<
+    string,
+    { connectionId: string; bridgeId: string }
+  >();
   const acpSessions = new Map<string, AcpSessionState>();
   const pendingAcpSessions = new Map<string, PendingAcpSessionState>();
-  const pendingApprovals = new Map<
-    string,
-    (decision: AcpPermissionDecision) => void
-  >();
+  const pendingApprovals = new Map<string, PendingAcpApproval>();
   const createAcpx = options?.createAcpxRuntime ?? defaultCreateAcpxRuntime;
+  const agentRegistry = options?.agentRegistry ?? createAcpAgentRegistry();
+  const permissionTimeoutMs = normalizePositiveDuration(
+    options?.permissionTimeoutMs,
+    15 * 60_000,
+  );
+  const disconnectGraceMs = normalizePositiveDuration(
+    options?.disconnectGraceMs,
+    60_000,
+  );
   const toolBridges =
-    options?.toolBridgeBroker ?? new ToolBridgeBroker(options?.toolBridgeOptions);
+    options?.toolBridgeBroker ??
+    new ToolBridgeBroker(options?.toolBridgeOptions);
 
   async function initializeAcpSession(
     sink: AgentHostSink,
@@ -240,12 +308,18 @@ export function createAgentRuntimeExecutor(options?: {
     sessionId: string,
     initialState?: AcpSessionState,
   ): Promise<AcpSessionState> {
+    const sequenceBase = resolveSequenceBase(payload);
     const existing = acpSessions.get(sessionId);
     if (existing) {
       if (
         existing.appToolBridgeId !== payload.appToolBridgeId ||
-        existing.restricted !== (payload.restricted === true)
+        existing.restricted !== (payload.restricted === true) ||
+        (existing.appToolBridgeId !== undefined &&
+          existing.connectionId !== sink.connectionId)
       ) {
+        settlePendingPermissions(pendingApprovals, sessionId, {
+          outcome: "reject_once",
+        });
         await existing.runtime.close({
           handle: existing.handle,
           reason: "app tool bridge changed",
@@ -259,14 +333,17 @@ export function createAgentRuntimeExecutor(options?: {
         }
       } else {
         existing.sink = sink;
+        existing.nextSequence = Math.max(existing.nextSequence, sequenceBase);
         return existing;
       }
     }
     const effectivePayload = payload.restricted
       ? restrictedAcpPayload(payload)
-      : withAppToolMcpServer(payload, sink, toolBridges);
-    const agent = resolveAcpAgent(effectivePayload);
-    const session = initialState ?? createAcpSessionState(sessionId, sink);
+      : withAppToolMcpServer(payload, sink, toolBridges, agentRegistry);
+    const agent = resolveAcpAgent(effectivePayload, agentRegistry);
+    const session =
+      initialState ?? createAcpSessionState(sessionId, sink, sequenceBase);
+    session.nextSequence = Math.max(session.nextSequence, sequenceBase);
     session.sink = sink;
     const runtimeSink: AgentRuntimeInputSink = {
       sendRuntimeEvent(event) {
@@ -281,16 +358,21 @@ export function createAgentRuntimeExecutor(options?: {
       sessionId,
       effectivePayload,
       pendingApprovals,
+      {
+        agent,
+        connectionId: sink.connectionId,
+        permissionTimeoutMs,
+      },
     );
     const handle = await runtime.ensureSession({
       sessionKey: sessionId,
-      agent,
+      agent: agent.id,
       mode: effectivePayload.restricted ? "oneshot" : "persistent",
       cwd: effectivePayload.workspace,
       sessionOptions: toAcpxSessionOptions(effectivePayload),
     });
     const thinking = toAcpxThinkingValue({
-      agent,
+      agent: agent.id,
       thinking: effectivePayload.thinking,
     });
     const thinkingKey = thinking
@@ -300,7 +382,7 @@ export function createAgentRuntimeExecutor(options?: {
       try {
         if (!runtime.setConfigOption) {
           throw new Error(
-            `ACP agent ${agent} does not support thinking configuration.`,
+            `ACP agent ${agent.id} does not support thinking configuration.`,
           );
         }
         await runtime.setConfigOption({
@@ -319,6 +401,7 @@ export function createAgentRuntimeExecutor(options?: {
     }
     session.runtime = runtime;
     session.handle = handle;
+    session.agentId = agent.id;
     session.connectionId = sink.connectionId;
     session.appToolBridgeId = effectivePayload.appToolBridgeId;
     session.restricted = effectivePayload.restricted === true;
@@ -332,14 +415,26 @@ export function createAgentRuntimeExecutor(options?: {
     text: string,
     runId: string,
   ): void {
+    if (session.running) {
+      throw new Error(
+        `ACP session already has an active turn: ${session.sessionId}`,
+      );
+    }
     session.sink = sink;
     session.currentRunId = runId;
-    const turn = session.runtime.startTurn({
-      handle: session.handle,
-      text,
-      mode: "prompt",
-      requestId: runId,
-    });
+    session.running = true;
+    let turn: ReturnType<AcpSessionState["runtime"]["startTurn"]>;
+    try {
+      turn = session.runtime.startTurn({
+        handle: session.handle,
+        text,
+        mode: "prompt",
+        requestId: runId,
+      });
+    } catch (error) {
+      session.running = false;
+      throw error;
+    }
     void (async () => {
       try {
         for await (const event of turn.events) {
@@ -359,6 +454,7 @@ export function createAgentRuntimeExecutor(options?: {
               message: result.error?.message ?? "ACP turn failed",
             },
           });
+          session.running = false;
           return;
         }
         emitRuntimeEvent(session, runId, {
@@ -369,7 +465,11 @@ export function createAgentRuntimeExecutor(options?: {
             stopReason: result.stopReason ?? result.status,
           },
         });
+        session.running = false;
       } catch (error) {
+        settlePendingPermissions(pendingApprovals, session.sessionId, {
+          outcome: "reject_once",
+        });
         emitRuntimeEvent(session, runId, {
           sessionId: session.sessionId,
           type: "event",
@@ -378,6 +478,7 @@ export function createAgentRuntimeExecutor(options?: {
             message: error instanceof Error ? error.message : String(error),
           },
         });
+        session.running = false;
       }
     })();
   }
@@ -423,11 +524,15 @@ export function createAgentRuntimeExecutor(options?: {
             payload.appToolBridgeId,
           )
         : undefined;
-      const child = spawn(command, nativeProcessArgs(payload.args ?? [], bridge), {
-        cwd: payload.cwd,
-        env: { ...process.env, ...payload.env, ...bridge?.env },
-        stdio: ["pipe", "pipe", "pipe"],
-      });
+      const child = spawn(
+        command,
+        nativeProcessArgs(payload.args ?? [], bridge),
+        {
+          cwd: payload.cwd,
+          env: { ...process.env, ...payload.env, ...bridge?.env },
+          stdio: ["pipe", "pipe", "pipe"],
+        },
+      );
       processes.set(processId, child);
       if (bridge && payload.appToolBridgeId) {
         processBridges.set(processId, {
@@ -471,9 +576,14 @@ export function createAgentRuntimeExecutor(options?: {
 
     async startAcpSession(sink, payload) {
       const sessionId = resolveAcpSessionId(payload);
+      const sequenceBase = resolveSequenceBase(payload);
       const pending = pendingAcpSessions.get(sessionId);
       if (pending) {
         pending.session.sink = sink;
+        pending.session.nextSequence = Math.max(
+          pending.session.nextSequence,
+          sequenceBase,
+        );
         await pending.ready;
         return { sessionId };
       }
@@ -488,19 +598,21 @@ export function createAgentRuntimeExecutor(options?: {
         existingPending.session.sink = sink;
         return { sessionId };
       }
-      const session = createAcpSessionState(sessionId, sink);
+      const session = createAcpSessionState(
+        sessionId,
+        sink,
+        resolveSequenceBase(payload),
+      );
       const pending: PendingAcpSessionState = {
         session,
         prompts: new Set(),
         closed: false,
         ready: new Promise<AcpSessionState>((resolve, reject) => {
           setTimeout(() => {
-            void initializeAcpSession(
-              sink,
-              payload,
-              sessionId,
-              session,
-            ).then(resolve, reject);
+            void initializeAcpSession(sink, payload, sessionId, session).then(
+              resolve,
+              reject,
+            );
           }, 0);
         }),
       };
@@ -528,8 +640,26 @@ export function createAgentRuntimeExecutor(options?: {
     },
 
     async listAcpModels(sink, payload) {
+      const agent = resolveAcpAgent(payload, agentRegistry);
+      const requestedSessionId = payload.sessionId?.trim();
+      const requestedLiveSession = requestedSessionId
+        ? acpSessions.get(requestedSessionId)
+        : undefined;
+      const liveSession =
+        requestedLiveSession &&
+        !requestedLiveSession.restricted &&
+        requestedLiveSession.agentId === agent.id
+          ? requestedLiveSession
+          : [...acpSessions.values()].find(
+              (session) => !session.restricted && session.agentId === agent.id,
+            );
+      if (liveSession?.runtime.getStatus) {
+        return modelCatalogFromStatus(
+          agent.id,
+          await liveSession.runtime.getStatus({ handle: liveSession.handle }),
+        );
+      }
       const sessionId = randomUUID();
-      const agent = resolveAcpAgent(payload);
       let sequence = 0;
       const catalogSink: AgentRuntimeInputSink = {
         sendRuntimeEvent(event) {
@@ -550,37 +680,92 @@ export function createAgentRuntimeExecutor(options?: {
       const runtime = await createAcpx(
         catalogSink,
         sessionId,
-        { ...payload, agent },
+        { ...payload, agent: agent.id },
         pendingApprovals,
+        {
+          agent,
+          connectionId: sink.connectionId,
+          permissionTimeoutMs,
+        },
       );
+      if (requestedSessionId && runtime.getStatus) {
+        try {
+          return modelCatalogFromStatus(
+            agent.id,
+            await runtime.getStatus({
+              handle: {
+                sessionKey: requestedSessionId,
+                runtimeSessionName: requestedSessionId,
+              },
+            }),
+          );
+        } catch (error) {
+          if (!isMissingAcpSession(error)) throw error;
+        }
+      }
       const handle = await runtime.ensureSession({
-        sessionKey: `model-catalog:${agent}:${sessionId}`,
-        agent,
+        sessionKey: `model-catalog:${agent.id}:${sessionId}`,
+        agent: agent.id,
         mode: "oneshot",
         cwd: payload.workspace,
       });
       try {
         if (!runtime.getStatus) {
-          return { agent, models: [], entries: [] };
+          return {
+            agent: agent.id,
+            models: [],
+            entries: [],
+            configOptions: [],
+          };
         }
-        const status = await runtime.getStatus({ handle });
-        const currentModel = status.models?.currentModelId?.trim() || undefined;
-        const models = [
-          ...new Set(
-            (status.models?.availableModelIds ?? [])
-              .map((model) => model.trim())
-              .filter(Boolean),
-          ),
-        ];
-        return {
-          agent,
-          currentModel,
-          models,
-          entries: catalogEntriesForAgent(agent, models),
-        };
+        return modelCatalogFromStatus(
+          agent.id,
+          await runtime.getStatus({ handle }),
+        );
       } finally {
         await closeDisposableAcpSession(runtime, handle);
       }
+    },
+
+    listAcpAgents() {
+      return {
+        agents: agentRegistry.list().map(({ id, label, mcpTransport }) => ({
+          id,
+          label,
+          mcpTransport,
+        })),
+      };
+    },
+
+    listAcpSessions() {
+      return [
+        ...new Set([...acpSessions.keys(), ...pendingAcpSessions.keys()]),
+      ].map((id) => this.getAcpSessionStatus(id));
+    },
+
+    getAcpSessionStatus(sessionId) {
+      const pending = pendingAcpSessions.get(sessionId);
+      const session = acpSessions.get(sessionId) ?? pending?.session;
+      if (!session) {
+        return {
+          sessionId,
+          state: "missing",
+          latestSequence: 0,
+          pendingPermissions: [],
+        };
+      }
+      return {
+        sessionId,
+        state: pending ? "initializing" : session.running ? "running" : "idle",
+        ...(session.currentRunId !== "session"
+          ? { runId: session.currentRunId }
+          : {}),
+        latestSequence: session.nextSequence,
+        pendingPermissions: pendingPermissionsForSession(
+          pendingApprovals,
+          sessionId,
+        ),
+      };
     },
 
     async promptAcpSession(sink, sessionId, text) {
@@ -614,12 +799,14 @@ export function createAgentRuntimeExecutor(options?: {
 
     async configureAcpSession(payload) {
       const pending = pendingAcpSessions.get(payload.sessionId);
-      const session = acpSessions.get(payload.sessionId) ?? (await pending?.ready);
-      if (!session) throw new Error(`Unknown ACP session: ${payload.sessionId}`);
+      const session =
+        acpSessions.get(payload.sessionId) ?? (await pending?.ready);
+      if (!session)
+        throw new Error(`Unknown ACP session: ${payload.sessionId}`);
       const runtime = session.runtime;
       const keys = runtime.getCapabilities
-        ? (await runtime.getCapabilities({ handle: session.handle }))
-            .configOptionKeys ?? []
+        ? ((await runtime.getCapabilities({ handle: session.handle }))
+            .configOptionKeys ?? [])
         : [];
       const result: AcpConfigureResult = {};
 
@@ -652,7 +839,8 @@ export function createAgentRuntimeExecutor(options?: {
                 ? { status: "applied" }
                 : {
                     status: "unsupported",
-                    reason: "The ACP session did not verify the requested model.",
+                    reason:
+                      "The ACP session did not verify the requested model.",
                   };
           } catch (error) {
             result.model = {
@@ -670,7 +858,8 @@ export function createAgentRuntimeExecutor(options?: {
         if (!thinkingKey || !runtime.setConfigOption) {
           result.thinking = {
             status: "unsupported",
-            reason: "The ACP session does not advertise thinking configuration.",
+            reason:
+              "The ACP session does not advertise thinking configuration.",
           };
         } else {
           try {
@@ -694,6 +883,9 @@ export function createAgentRuntimeExecutor(options?: {
     },
 
     async cancelAcpSession(sessionId) {
+      settlePendingPermissions(pendingApprovals, sessionId, {
+        outcome: "cancel",
+      });
       const session = acpSessions.get(sessionId);
       if (session) {
         await session.runtime.cancel({ handle: session.handle });
@@ -705,6 +897,9 @@ export function createAgentRuntimeExecutor(options?: {
     },
 
     async closeAcpSession(sessionId) {
+      settlePendingPermissions(pendingApprovals, sessionId, {
+        outcome: "reject_once",
+      });
       const session = acpSessions.get(sessionId);
       if (session) {
         await closeAcpSessionState(session, acpSessions, toolBridges);
@@ -725,8 +920,10 @@ export function createAgentRuntimeExecutor(options?: {
       const key = `${sessionId}:${requestId}`;
       const resolve = pendingApprovals.get(key);
       if (!resolve) throw new Error(`Unknown ACP approval: ${key}`);
+      const normalized = normalizePermissionDecision(decision, resolve.options);
       pendingApprovals.delete(key);
-      resolve(normalizePermissionDecision(decision));
+      clearPendingApprovalTimers(resolve);
+      resolve(normalized);
     },
 
     openToolBridge(sink, payload) {
@@ -743,9 +940,21 @@ export function createAgentRuntimeExecutor(options?: {
 
     disconnectConnection(connectionId) {
       toolBridges.closeConnection(connectionId);
+      for (const [key, approval] of pendingApprovals) {
+        if (approval.connectionId !== connectionId) continue;
+        clearTimeout(approval.disconnectTimer);
+        approval.disconnectTimer = setTimeout(() => {
+          if (!pendingApprovals.delete(key)) return;
+          clearPendingApprovalTimers(approval);
+          approval({ outcome: "reject_once" });
+        }, disconnectGraceMs);
+      }
     },
 
     async close() {
+      settlePendingPermissions(pendingApprovals, undefined, {
+        outcome: "reject_once",
+      });
       for (const child of processes.values()) child.kill();
       processes.clear();
       processBridges.clear();
@@ -765,6 +974,95 @@ export function createAgentRuntimeExecutor(options?: {
   };
 }
 
+function modelCatalogFromStatus(
+  agent: string,
+  status: Awaited<ReturnType<NonNullable<AcpxRuntimeLike["getStatus"]>>>,
+): AcpModelCatalog {
+  const currentModel = status.models?.currentModelId?.trim() || undefined;
+  const models = [
+    ...new Set(
+      (status.models?.availableModelIds ?? [])
+        .map((model) => model.trim())
+        .filter(Boolean),
+    ),
+  ];
+  return {
+    agent,
+    currentModel,
+    models,
+    entries: catalogEntriesForAgent(agent, models),
+    configOptions: parseAcpConfigOptions(status.details?.configOptions),
+  };
+}
+
+function isMissingAcpSession(error: unknown): boolean {
+  return (
+    error instanceof Error && error.message.startsWith("ACP session not found:")
+  );
+}
+
+export function parseAcpConfigOptions(value: unknown): AcpConfigOption[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item): AcpConfigOption[] => {
+    if (!item || typeof item !== "object") return [];
+    const option = item as Record<string, unknown>;
+    const id = typeof option.id === "string" ? option.id.trim() : "";
+    const name = typeof option.name === "string" ? option.name.trim() : "";
+    const type = option.type;
+    const currentValue = option.currentValue;
+    if (
+      !id ||
+      !name ||
+      (type !== "select" && type !== "boolean") ||
+      (typeof currentValue !== "string" && typeof currentValue !== "boolean")
+    )
+      return [];
+    const values =
+      type === "select" && Array.isArray(option.options)
+        ? option.options.flatMap(
+            (entry): NonNullable<AcpConfigOption["options"]> => {
+              if (!entry || typeof entry !== "object") return [];
+              const candidate = entry as Record<string, unknown>;
+              const value =
+                typeof candidate.value === "string"
+                  ? candidate.value.trim()
+                  : "";
+              const label =
+                typeof candidate.name === "string" ? candidate.name.trim() : "";
+              return value && label
+                ? [
+                    {
+                      value,
+                      name: label,
+                      ...(typeof candidate.description === "string" &&
+                      candidate.description.trim()
+                        ? { description: candidate.description.trim() }
+                        : {}),
+                    },
+                  ]
+                : [];
+            },
+          )
+        : undefined;
+    if (type === "select" && (!values || values.length === 0)) return [];
+    return [
+      {
+        id,
+        name,
+        type,
+        currentValue,
+        ...(typeof option.description === "string" && option.description.trim()
+          ? { description: option.description.trim() }
+          : {}),
+        ...(typeof option.category === "string" && option.category.trim()
+          ? { category: option.category.trim() }
+          : {}),
+        ...(values ? { options: values } : {}),
+      },
+    ];
+  });
+}
+
 type AcpSessionState = {
   sessionId: string;
   runtime: AcpxRuntimeLike;
@@ -772,9 +1070,11 @@ type AcpSessionState = {
   sink: AgentHostSink;
   currentRunId: string;
   nextSequence: number;
+  agentId?: string;
   connectionId?: string;
   appToolBridgeId?: string;
   restricted: boolean;
+  running: boolean;
 };
 
 type PendingAcpPrompt = {
@@ -792,16 +1092,26 @@ type PendingAcpSessionState = {
 function createAcpSessionState(
   sessionId: string,
   sink: AgentHostSink,
+  sequenceBase = 0,
 ): AcpSessionState {
   return {
     sessionId,
     sink,
     currentRunId: "session",
-    nextSequence: 0,
+    nextSequence: sequenceBase,
     runtime: undefined as unknown as AcpxRuntimeLike,
     handle: undefined as unknown as AcpRuntimeHandle,
     restricted: false,
+    running: false,
   };
+}
+
+function resolveSequenceBase(payload: AcpStartPayload): number {
+  const value = payload.sequenceBase ?? 0;
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error("ACP sequence base must be a non-negative safe integer");
+  }
+  return value;
 }
 
 function resolveAcpSessionId(payload: AcpStartPayload): string {
@@ -890,16 +1200,21 @@ export async function defaultCreateAcpxRuntime(
   sink: AgentRuntimeInputSink,
   sessionId: string,
   payload: AcpStartPayload,
-  pendingApprovals: Map<string, (decision: AcpPermissionDecision) => void>,
+  pendingApprovals: Map<string, PendingAcpApproval>,
+  context: CreateAcpxRuntimeContext = {
+    agent: createAcpAgentRegistry().resolve("codex"),
+    permissionTimeoutMs: 15 * 60_000,
+  },
 ): Promise<AcpxRuntimeLike> {
   let acpx: {
     createAcpRuntime: (options: Record<string, unknown>) => AcpxRuntimeLike;
-    createAgentRegistry: () => unknown;
+    createAgentRegistry: (params?: {
+      overrides?: Record<string, string | string[]>;
+    }) => unknown;
     createRuntimeStore: (options: { stateDir: string }) => unknown;
   };
   try {
-    const specifier = "acpx/runtime";
-    acpx = (await import(specifier)) as typeof acpx;
+    acpx = (await import("acpx/runtime")) as unknown as typeof acpx;
   } catch {
     throw new Error(
       "acpx/runtime is not available. Install acpx >= 0.8.0 on the AI host.",
@@ -912,51 +1227,87 @@ export async function defaultCreateAcpxRuntime(
   let runtime: AcpxRuntimeLike;
   try {
     runtime = acpx.createAcpRuntime({
-    cwd,
-    sessionStore: acpx.createRuntimeStore({
-      stateDir: `${cwd}/.lapis/ai-sessions`,
-    }),
-    agentRegistry: acpx.createAgentRegistry(),
-    mcpServers: toAcpxMcpServers(payload.mcpServers),
-    permissionMode: "deny-all",
-    onPermissionRequest: async (request: {
-      sessionId?: string;
-      inferredKind?: string;
-      raw?: Record<string, unknown>;
-    }) => {
-      if (payload.restricted) return { outcome: "reject_once" };
-      const raw = request.raw ?? {};
-      const toolCall =
-        raw.toolCall && typeof raw.toolCall === "object"
-          ? (raw.toolCall as Record<string, unknown>)
-          : {};
-      const requestId = String(
-        toolCall.toolCallId ??
-          raw.toolCallId ??
-          request.sessionId ??
-          randomUUID(),
-      );
-      sink.sendRuntimeEvent({
-        sessionId,
-        type: "permission",
+      cwd,
+      sessionStore: acpx.createRuntimeStore({
+        stateDir: `${cwd}/.lapis/ai-sessions`,
+      }),
+      agentRegistry: acpx.createAgentRegistry(
+        context.agent.command
+          ? { overrides: { [context.agent.id]: context.agent.command } }
+          : undefined,
+      ),
+      mcpServers: toAcpxMcpServers(payload.mcpServers),
+      permissionMode: "deny-all",
+      onPermissionRequest: async (
         request: {
-          requestId,
-          id: requestId,
-          sessionId: request.sessionId,
-          inferredKind: request.inferredKind,
-          raw,
-          kind: request.inferredKind ?? toolCall.kind,
-          title: toolCall.title,
-          toolName: toolCall.title ?? toolCall.kind,
-          input: toolCall.rawInput,
-          options: raw.options,
+          sessionId?: string;
+          inferredKind?: string;
+          raw?: Record<string, unknown>;
         },
-      });
-      return new Promise<AcpPermissionDecision>((resolve) => {
-        pendingApprovals.set(`${sessionId}:${requestId}`, resolve);
-      });
-    },
-  });
+        requestContext?: { signal?: AbortSignal },
+      ) => {
+        if (payload.restricted) return { outcome: "reject_once" };
+        const raw = request.raw ?? {};
+        const toolCall =
+          raw.toolCall && typeof raw.toolCall === "object"
+            ? (raw.toolCall as Record<string, unknown>)
+            : {};
+        const requestId = String(
+          toolCall.toolCallId ??
+            raw.toolCallId ??
+            request.sessionId ??
+            randomUUID(),
+        );
+        const key = `${sessionId}:${requestId}`;
+        if (pendingApprovals.has(key)) {
+          return { outcome: "reject_once" };
+        }
+        const options = permissionOptionOutcomes(raw.options);
+        if (options.length === 0 || new Set(options).size !== options.length) {
+          return { outcome: "reject_once" };
+        }
+        const expiresAt = Date.now() + context.permissionTimeoutMs;
+        sink.sendRuntimeEvent({
+          sessionId,
+          type: "permission",
+          request: {
+            requestId,
+            id: requestId,
+            sessionId: request.sessionId,
+            inferredKind: request.inferredKind,
+            raw,
+            kind: request.inferredKind ?? toolCall.kind,
+            title: toolCall.title,
+            toolName: toolCall.title ?? toolCall.kind,
+            input: toolCall.rawInput,
+            options: raw.options,
+            expiresAt,
+          },
+        });
+        return new Promise<AcpPermissionDecision>((resolve) => {
+          const pending = ((decision: AcpPermissionDecision) => {
+            clearPendingApprovalTimers(pending);
+            resolve(decision);
+          }) as PendingAcpApproval;
+          pending.connectionId = context.connectionId;
+          pending.expiresAt = expiresAt;
+          pending.options = options;
+          pending.timeout = setTimeout(() => {
+            if (!pendingApprovals.delete(key)) return;
+            pending({ outcome: "reject_once" });
+          }, context.permissionTimeoutMs);
+          requestContext?.signal?.addEventListener(
+            "abort",
+            () => {
+              if (!pendingApprovals.delete(key)) return;
+              pending({ outcome: "reject_once" });
+            },
+            { once: true },
+          );
+          pendingApprovals.set(key, pending);
+        });
+      },
+    });
   } catch (error) {
     if (temporaryCwd) {
       await rm(temporaryCwd, { recursive: true, force: true });
@@ -985,7 +1336,8 @@ export async function defaultCreateAcpxRuntime(
 }
 
 function requiredConnectionId(sink: AgentHostSink): string {
-  if (!sink.connectionId) throw new Error("Agent host connection identity missing");
+  if (!sink.connectionId)
+    throw new Error("Agent host connection identity missing");
   return sink.connectionId;
 }
 
@@ -1004,14 +1356,17 @@ function withAppToolMcpServer(
   payload: AcpStartPayload,
   sink: AgentHostSink,
   broker: ToolBridgeBroker,
+  registry: AcpAgentRegistry,
 ): AcpStartPayload {
-  if ((payload.mcpServers ?? []).some((server) => server.name === "lapis-tools")) {
+  if (
+    (payload.mcpServers ?? []).some((server) => server.name === "lapis-tools")
+  ) {
     throw new Error("MCP server name is reserved: lapis-tools");
   }
   if (!payload.appToolBridgeId) return payload;
   const connectionId = requiredConnectionId(sink);
   const appServer =
-    resolveAcpAgent(payload) === "cursor"
+    resolveAcpAgent(payload, registry).mcpTransport === "http"
       ? broker.httpServerContribution(connectionId, payload.appToolBridgeId)
       : broker.serverContribution(connectionId, payload.appToolBridgeId);
   return {
@@ -1032,9 +1387,7 @@ function restrictedAcpPayload(payload: AcpStartPayload): AcpStartPayload {
   };
 }
 
-export function toAcpxMcpServers(
-  servers: AcpStartPayload["mcpServers"],
-): Array<
+export function toAcpxMcpServers(servers: AcpStartPayload["mcpServers"]): Array<
   | {
       type: "stdio";
       name: string;
@@ -1087,6 +1440,10 @@ function nativeProcessArgs(
     `mcp_servers.${bridge.name}.command=${JSON.stringify(bridge.command)}`,
     "-c",
     `mcp_servers.${bridge.name}.args=${JSON.stringify(bridge.args)}`,
+    "-c",
+    `mcp_servers.${bridge.name}.env_vars=${JSON.stringify(Object.keys(bridge.env))}`,
+    "-c",
+    `mcp_servers.${bridge.name}.required=true`,
   ];
 }
 
@@ -1102,25 +1459,79 @@ function closeProcessBridge(
 
 export function normalizePermissionDecision(
   decision: string | AcpPermissionDecision,
+  offeredOutcomes?: readonly string[],
 ): AcpPermissionDecision {
-  if (typeof decision !== "string") return decision;
-  if (decision === "allow_always" || decision === "allow-always") {
-    return { outcome: "allow_always" };
+  const outcome = typeof decision === "string" ? decision : decision.outcome;
+  if (!PERMISSION_OUTCOMES.has(outcome)) {
+    throw new Error(`Invalid ACP permission decision: ${outcome}`);
   }
   if (
-    decision === "reject_once" ||
-    decision === "deny_once" ||
-    decision === "deny-once"
+    outcome !== "cancel" &&
+    offeredOutcomes &&
+    !offeredOutcomes.includes(outcome)
   ) {
-    return { outcome: "reject_once" };
+    throw new Error(`ACP permission decision was not offered: ${outcome}`);
   }
-  if (
-    decision === "reject_always" ||
-    decision === "deny_always" ||
-    decision === "deny-always"
-  ) {
-    return { outcome: "reject_always" };
+  return { outcome } as AcpPermissionDecision;
+}
+
+const PERMISSION_OUTCOMES = new Set([
+  "allow_once",
+  "allow_always",
+  "reject_once",
+  "reject_always",
+  "cancel",
+]);
+
+function permissionOptionOutcomes(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((option) => {
+    if (!option || typeof option !== "object") return [];
+    const kind = (option as Record<string, unknown>).kind;
+    return typeof kind === "string" && PERMISSION_OUTCOMES.has(kind)
+      ? [kind]
+      : [];
+  });
+}
+
+function clearPendingApprovalTimers(approval: PendingAcpApproval): void {
+  clearTimeout(approval.timeout);
+  clearTimeout(approval.disconnectTimer);
+}
+
+function settlePendingPermissions(
+  approvals: Map<string, PendingAcpApproval>,
+  sessionId: string | undefined,
+  decision: AcpPermissionDecision,
+): void {
+  const prefix = sessionId === undefined ? undefined : `${sessionId}:`;
+  for (const [key, approval] of approvals) {
+    if (prefix !== undefined && !key.startsWith(prefix)) continue;
+    approvals.delete(key);
+    clearPendingApprovalTimers(approval);
+    approval(decision);
   }
-  if (decision === "cancel") return { outcome: "cancel" };
-  return { outcome: "allow_once" };
+}
+
+function pendingPermissionsForSession(
+  approvals: Map<string, PendingAcpApproval>,
+  sessionId: string,
+): AcpSessionStatus["pendingPermissions"] {
+  const prefix = `${sessionId}:`;
+  return [...approvals.entries()]
+    .filter(([key]) => key.startsWith(prefix))
+    .map(([key, approval]) => ({
+      requestId: key.slice(prefix.length),
+      ...(approval.expiresAt === undefined
+        ? {}
+        : { expiresAt: approval.expiresAt }),
+      options: [...(approval.options ?? [])],
+    }));
+}
+
+function normalizePositiveDuration(
+  value: number | undefined,
+  fallback: number,
+): number {
+  return Number.isFinite(value) && value! > 0 ? Math.floor(value!) : fallback;
 }

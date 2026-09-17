@@ -1,4 +1,5 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { createAcpAgentRegistry } from "./acp-agent";
 import {
   getDefaultEnvironment,
   StdioClientTransport,
@@ -87,6 +88,7 @@ describe("agent-runtime websocket contract", () => {
   async function startHost(
     createAcpxRuntime = createFakeAcpx(),
     toolBridgeOptions?: ToolBridgeBrokerOptions,
+    profile: "trusted" | "controller" = "trusted",
   ) {
     const workspace = await mkdtemp(join(tmpdir(), "lapis-ai-host-"));
     host = await serveAgentHost(
@@ -96,6 +98,7 @@ describe("agent-runtime websocket contract", () => {
         workspace,
         token: "contract-token",
         origins: [],
+        profile,
       },
       {
         executor: createAgentRuntimeExecutor({
@@ -107,6 +110,51 @@ describe("agent-runtime websocket contract", () => {
     );
     return host;
   }
+
+  it("discovers registered agents and restricts controller commands", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "lapis-ai-host-"));
+    host = await serveAgentHost(
+      {
+        port: 0,
+        bind: "127.0.0.1",
+        workspace,
+        token: "contract-token",
+        origins: [],
+        profile: "controller",
+      },
+      {
+        executor: createAgentRuntimeExecutor({
+          createAcpxRuntime: createFakeAcpx(),
+          agentRegistry: createAcpAgentRegistry([
+            {
+              id: "claude",
+              label: "Claude",
+              enabled: true,
+              mcpTransport: "stdio",
+            },
+          ]),
+        }),
+        print: () => {},
+      },
+    );
+    const bridge = createAgentRuntimeBridge({
+      url: host.url,
+      token: host.token,
+    });
+    await expect(bridge.invoke("desktop_agent_acp_agents")).resolves.toEqual({
+      agents: [{ id: "claude", label: "Claude", mcpTransport: "stdio" }],
+    });
+    await expect(
+      bridge.invoke("desktop_agent_process_spawn", { command: "true" }),
+    ).rejects.toThrow(/controller profile/i);
+    await expect(
+      bridge.invoke("desktop_agent_acp_start", {
+        agent: "claude",
+        mcpServers: [{ name: "unsafe", command: "unsafe" }],
+      }),
+    ).rejects.toThrow(/caller MCP/i);
+    bridge.dispose();
+  });
 
   it("routes app tool calls through the authenticated remote host and revokes them on disconnect", async () => {
     let appServer:
@@ -126,7 +174,7 @@ describe("agent-runtime websocket contract", () => {
         return baseRuntime(sink, sessionId, payload, pendingApprovals);
       },
       {
-        shimPath: new URL("./mcp-shim.ts", import.meta.url).pathname,
+        shimPath: new URL("./mcp-shim-cli.ts", import.meta.url).pathname,
         shimArgsPrefix: ["--import", "tsx"],
       },
     );
@@ -236,8 +284,7 @@ describe("agent-runtime websocket contract", () => {
         models: ["gpt-test"],
       });
       expect(
-        bridge.capabilities["agent-runtime"]?.details
-          ?.sessionConfiguration,
+        bridge.capabilities["agent-runtime"]?.details?.sessionConfiguration,
       ).toBe("configure");
     } finally {
       bridge.dispose();
@@ -281,7 +328,7 @@ describe("agent-runtime websocket contract", () => {
       bridge.invoke("desktop_agent_acp_models", { agent: "cursor" }),
     ).resolves.toMatchObject({
       agent: "cursor",
-      currentModel: "composer",
+      currentModel: "composer-fast",
       models: ["composer", "composer-fast"],
     });
 
@@ -417,7 +464,49 @@ describe("agent-runtime websocket contract", () => {
     bridge.dispose();
   });
 
-  it("surfaces host restart as an interrupted turn without replaying input", async () => {
+  it("restores persisted cursors and acknowledges replay manually", async () => {
+    const running = await startHost();
+    const first = createAgentRuntimeBridge({
+      url: running.url,
+      token: running.token,
+    });
+    const started = await first.invoke<{ sessionId: string }>(
+      "desktop_agent_acp_start",
+      { agent: "codex" },
+    );
+    await first.invoke("desktop_agent_acp_prompt", {
+      sessionId: started.sessionId,
+      text: "persist me",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    first.dispose();
+
+    const replayed: Array<{ sequence: number }> = [];
+    const second = createAgentRuntimeBridge({
+      url: running.url,
+      token: running.token,
+      manualAcknowledgement: true,
+      replayCursors: [{ sessionId: started.sessionId, afterSequence: 0 }],
+    });
+    second.onAgentRuntimeEvent?.((event) => replayed.push(event));
+    await second.invoke("desktop_agent_acp_status", {
+      sessionId: started.sessionId,
+    });
+    await expect.poll(() => replayed.length).toBeGreaterThan(0);
+    const latest = replayed.at(-1)!.sequence;
+    expect(() =>
+      second.acknowledgeAgentRuntimeEvent(started.sessionId, latest + 1),
+    ).toThrow(/unreceived/i);
+    expect(() =>
+      second.acknowledgeAgentRuntimeEvent(started.sessionId, latest),
+    ).not.toThrow();
+    await second.invoke("desktop_agent_acp_close", {
+      sessionId: started.sessionId,
+    });
+    second.dispose();
+  });
+
+  it("continues monotonic delivery after a host restart without replaying input", async () => {
     let turns = 0;
     const createRuntime: CreateAcpxRuntime = async () => ({
       async ensureSession(input) {
@@ -425,9 +514,10 @@ describe("agent-runtime websocket contract", () => {
       },
       startTurn() {
         turns += 1;
+        const text = turns === 1 ? "before restart" : "after restart";
         return {
           events: (async function* () {
-            yield { type: "text_delta", text: "before restart" };
+            yield { type: "text_delta", text };
           })(),
           result: Promise.resolve({ status: "completed" }),
         };
@@ -437,23 +527,24 @@ describe("agent-runtime websocket contract", () => {
     });
     const running = await startHost(createRuntime);
     const port = Number(new URL(running.url).port);
-    const bridge = createAgentRuntimeBridge({
+    const firstBridge = createAgentRuntimeBridge({
       url: running.url,
       token: running.token,
     });
-    const events: Array<Record<string, unknown>> = [];
-    bridge.onAgentRuntimeEvent?.((event) => events.push(event));
-    const { sessionId } = await bridge.invoke<{ sessionId: string }>(
+    const firstEvents: Array<Record<string, unknown>> = [];
+    firstBridge.onAgentRuntimeEvent?.((event) => firstEvents.push(event));
+    const { sessionId } = await firstBridge.invoke<{ sessionId: string }>(
       "desktop_agent_acp_start",
       { agent: "codex" },
     );
-    await bridge.invoke("desktop_agent_acp_prompt", {
+    await firstBridge.invoke("desktop_agent_acp_prompt", {
       sessionId,
       text: "must run once",
     });
     await expect
-      .poll(() => eventTexts(events).includes("before restart"))
+      .poll(() => eventTexts(firstEvents).includes("before restart"))
       .toBe(true);
+    firstBridge.dispose();
 
     await running.close();
     host = await serveAgentHost(
@@ -472,6 +563,16 @@ describe("agent-runtime websocket contract", () => {
       },
     );
 
+    const events: Array<Record<string, unknown>> = [];
+    const bridge = createAgentRuntimeBridge({
+      url: host.url,
+      token: host.token,
+      manualAcknowledgement: true,
+      replayCursors: [{ sessionId, afterSequence: 82 }],
+    });
+    bridge.onAgentRuntimeEvent?.((event) => events.push(event));
+    await bridge.invoke("desktop_agent_acp_status", { sessionId });
+
     await expect
       .poll(
         () =>
@@ -483,7 +584,36 @@ describe("agent-runtime websocket contract", () => {
         { timeout: 3_000 },
       )
       .toBe(true);
+    const replayGapSequence = Math.max(
+      ...events
+        .filter(
+          (event) =>
+            (event.event as { event?: { code?: string } } | undefined)?.event
+              ?.code === "AGENT_RUNTIME_REPLAY_GAP",
+        )
+        .map((event) => Number(event.sequence)),
+    );
     expect(turns).toBe(1);
+
+    await bridge.invoke("desktop_agent_acp_start", {
+      sessionId,
+      agent: "codex",
+    });
+    await bridge.invoke("desktop_agent_acp_prompt", {
+      sessionId,
+      text: "new turn after restart",
+    });
+    await expect
+      .poll(() => eventTexts(events).includes("after restart"))
+      .toBe(true);
+    const resumed = events.find(
+      (event) =>
+        (event.event as { event?: { text?: string } } | undefined)?.event
+          ?.text === "after restart",
+    );
+    expect(Number(resumed?.sequence)).toBeGreaterThan(replayGapSequence);
+    expect(eventTexts(events)).not.toContain("before restart");
+    expect(turns).toBe(2);
     bridge.dispose();
   });
 
@@ -526,8 +656,7 @@ describe("agent-runtime websocket contract", () => {
 function eventTexts(events: Array<Record<string, unknown>>): string[] {
   return events.flatMap((event): string[] => {
     const payload = event.event as
-      | { event?: { type?: string; text?: string } }
-      | undefined;
+      { event?: { type?: string; text?: string } } | undefined;
     return payload?.event?.type === "text_delta" && payload.event.text
       ? [payload.event.text]
       : [];

@@ -32,6 +32,8 @@ export const REPLAY_MAX_BYTES = 8 * 1024 * 1024;
 export const AGENT_RUNTIME_COMMANDS = [
   "desktop_agent_acp_start",
   "desktop_agent_acp_models",
+  "desktop_agent_acp_agents",
+  "desktop_agent_acp_status",
   "desktop_agent_acp_prompt",
   "desktop_agent_acp_configure",
   "desktop_agent_runtime_subscribe",
