@@ -17,6 +17,17 @@ describe("resolveAcpAgent", () => {
 });
 
 describe("toAcpxSessionOptions", () => {
+  it("isolates a validated VCS identity in the session child environment", () => {
+    const identity = { name: "Nyra", email: "nyra@nostr.invalid" };
+    const options = toAcpxSessionOptions({ metadata: { vcsIdentity: identity } });
+    expect(options).toEqual({ env: {
+      JJ_USER: identity.name, JJ_EMAIL: identity.email,
+      GIT_AUTHOR_NAME: identity.name, GIT_AUTHOR_EMAIL: identity.email,
+      GIT_COMMITTER_NAME: identity.name, GIT_COMMITTER_EMAIL: identity.email,
+    } });
+    expect(toAcpxSessionOptions({})).toEqual({});
+    expect(() => toAcpxSessionOptions({ metadata: { vcsIdentity: { name: "bad\nname", email: "x@y" } } })).toThrow(/identity/i);
+  });
   it("maps only model to acpx session options", () => {
     expect(
       toAcpxSessionOptions({
