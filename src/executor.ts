@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   createAcpAgentRegistry,
   resolveAcpAgent,
+  withAcpVcsEnvironment,
   type AcpAgentDefinition,
   type AcpAgentRegistry,
 } from "./acp-agent";
@@ -16,6 +17,7 @@ import type {
 } from "./protocol";
 import {
   toAcpxSessionOptions,
+  vcsEnvironment,
   toAcpxThinkingValue,
   type AcpxSessionOptions,
 } from "./acp-session-options";
@@ -1210,7 +1212,7 @@ export async function defaultCreateAcpxRuntime(
     createAcpRuntime: (options: Record<string, unknown>) => AcpxRuntimeLike;
     createAgentRegistry: (params?: {
       overrides?: Record<string, string | string[]>;
-    }) => unknown;
+    }) => { resolve(agent: string): string | string[] };
     createRuntimeStore: (options: { stateDir: string }) => unknown;
   };
   try {
@@ -1226,16 +1228,28 @@ export async function defaultCreateAcpxRuntime(
   const cwd = temporaryCwd ?? payload.workspace ?? process.cwd();
   let runtime: AcpxRuntimeLike;
   try {
+    const identity = vcsEnvironment(payload);
+    const configured = acpx.createAgentRegistry(
+      context.agent.command
+        ? { overrides: { [context.agent.id]: context.agent.command } }
+        : undefined,
+    );
+    const registry = identity
+      ? acpx.createAgentRegistry({
+          overrides: {
+            [context.agent.id]: withAcpVcsEnvironment(
+              configured.resolve(context.agent.id),
+              identity,
+            ),
+          },
+        })
+      : configured;
     runtime = acpx.createAcpRuntime({
       cwd,
       sessionStore: acpx.createRuntimeStore({
         stateDir: `${cwd}/.lapis/ai-sessions`,
       }),
-      agentRegistry: acpx.createAgentRegistry(
-        context.agent.command
-          ? { overrides: { [context.agent.id]: context.agent.command } }
-          : undefined,
-      ),
+      agentRegistry: registry,
       mcpServers: toAcpxMcpServers(payload.mcpServers),
       permissionMode: "deny-all",
       onPermissionRequest: async (

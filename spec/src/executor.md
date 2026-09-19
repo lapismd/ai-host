@@ -38,3 +38,9 @@ Embedding controllers can resolve an agent launch command through the public lib
 Explicit argv remains unchanged; absent overrides use the installed acpx registry,
 including its configured adapter package range. Consumers must not invent an extra
 global binary requirement for the same registered agent.
+
+VCS identity is supplied by a scoped registered-agent launch wrapper. It MUST
+not be stored in acpx `session_options.env`: acpx 0.13.2 applies its snake-case
+record-key policy to that environment map and rejects required uppercase VCS
+variables. The wrapper forwards the registered command and arguments, standard
+streams, exit status and termination signals, without changing host globals.

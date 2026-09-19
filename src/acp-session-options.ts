@@ -5,7 +5,6 @@ export type AcpStartSessionFields = {
 };
 
 export type AcpxSessionOptions = {
-  env?: Record<string, string>;
   model?: string;
   systemPrompt?: string | { append: string };
 };
@@ -14,17 +13,6 @@ export function toAcpxSessionOptions(
   payload: AcpStartSessionFields,
 ): AcpxSessionOptions {
   const options: AcpxSessionOptions = {};
-  if (payload.metadata?.vcsIdentity !== undefined) {
-    const identity = payload.metadata.vcsIdentity as { name?: unknown; email?: unknown } | null;
-    if (!identity || typeof identity.name !== "string" || typeof identity.email !== "string" ||
-      !identity.name.trim() || !identity.email.trim() || identity.name.length > 256 || identity.email.length > 320 ||
-      /[\r\n\0]/u.test(identity.name + identity.email)) throw new Error("Invalid VCS identity");
-    options.env = {
-      JJ_USER: identity.name, JJ_EMAIL: identity.email,
-      GIT_AUTHOR_NAME: identity.name, GIT_AUTHOR_EMAIL: identity.email,
-      GIT_COMMITTER_NAME: identity.name, GIT_COMMITTER_EMAIL: identity.email,
-    };
-  }
   if (payload.model?.model) options.model = payload.model.model;
   const parts = [
     portableSessionBootstrap(payload.metadata),
@@ -68,4 +56,35 @@ export function toAcpxThinkingValue(
   if (!payload.thinking) return undefined;
   if (payload.agent === "codex" && payload.thinking === "off") return "none";
   return payload.thinking;
+}
+
+export function vcsEnvironment(
+  payload: AcpStartSessionFields,
+): Record<string, string> | undefined {
+  if (payload.metadata?.vcsIdentity !== undefined) {
+    const identity = payload.metadata.vcsIdentity as {
+      name?: unknown;
+      email?: unknown;
+    } | null;
+    if (
+      !identity ||
+      typeof identity.name !== "string" ||
+      typeof identity.email !== "string" ||
+      !identity.name.trim() ||
+      !identity.email.trim() ||
+      identity.name.length > 256 ||
+      identity.email.length > 320 ||
+      /[\r\n\0]/u.test(identity.name + identity.email)
+    )
+      throw new Error("Invalid VCS identity");
+    return {
+      JJ_USER: identity.name,
+      JJ_EMAIL: identity.email,
+      GIT_AUTHOR_NAME: identity.name,
+      GIT_AUTHOR_EMAIL: identity.email,
+      GIT_COMMITTER_NAME: identity.name,
+      GIT_COMMITTER_EMAIL: identity.email,
+    };
+  }
+  return undefined;
 }
