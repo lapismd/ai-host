@@ -15,6 +15,7 @@ export {
   type AcpxSessionOptions,
 } from "./acp-session-options";
 export {
+  ACP_MODEL_CATALOG_UNAVAILABLE,
   createAgentRuntimeExecutor,
   defaultCreateAcpxRuntime,
   normalizePermissionDecision,

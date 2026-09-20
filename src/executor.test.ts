@@ -253,6 +253,54 @@ describe("agent runtime executor ACP model catalogs", () => {
     await executor.closeAcpSession(started.sessionId);
   });
 
+  it("returns last-good catalog without starting a oneshot session", async () => {
+    const fake = createRuntime(["model"]);
+    fake.runtime.getStatus = async () => ({
+      models: {
+        currentModelId: "gpt-6",
+        availableModelIds: ["gpt-6", "gpt-5.6"],
+      },
+    });
+    const createAcpxRuntime = vi.fn(async () => fake.runtime);
+    const executor = createAgentRuntimeExecutor({ createAcpxRuntime });
+    const started = await executor.startAcpSession(sink, {
+      agent: "codex",
+      workspace: "/tmp/cached-agent",
+    });
+    await executor.listAcpModels(sink, {
+      agent: "codex",
+      workspace: "/tmp/cached-agent",
+    });
+    await executor.closeAcpSession(started.sessionId);
+    createAcpxRuntime.mockClear();
+
+    await expect(
+      executor.listAcpModels(sink, { agent: "codex" }),
+    ).resolves.toMatchObject({
+      agent: "codex",
+      currentModel: "gpt-6",
+      models: ["gpt-6", "gpt-5.6"],
+    });
+    expect(createAcpxRuntime).not.toHaveBeenCalled();
+  });
+
+  it("returns catalog unavailable without starting a oneshot session on the request path", async () => {
+    const fake = createRuntime(["model"]);
+    const createAcpxRuntime = vi.fn(async () => fake.runtime);
+    const executor = createAgentRuntimeExecutor({ createAcpxRuntime });
+
+    await expect(
+      executor.listAcpModels(sink, { agent: "codex" }),
+    ).resolves.toEqual({
+      agent: "codex",
+      models: [],
+      entries: [],
+      configOptions: [],
+      error: "catalog unavailable",
+    });
+    expect(createAcpxRuntime).not.toHaveBeenCalled();
+  });
+
   it("keeps Cursor models when backend session close is unsupported", async () => {
     const fake = createRuntime(["mode", "model"]);
     fake.runtime.getStatus = async () => ({
@@ -278,14 +326,25 @@ describe("agent runtime executor ACP model catalogs", () => {
       executor.listAcpModels(sink, { agent: "cursor" }),
     ).resolves.toEqual({
       agent: "cursor",
-      currentModel: "composer-2.5",
-      models: ["composer-2.5", "composer-2.5-fast"],
-      entries: [
-        { id: "composer-2.5", label: "composer-2.5" },
-        { id: "composer-2.5-fast", label: "composer-2.5-fast" },
-      ],
+      models: [],
+      entries: [],
       configOptions: [],
+      error: "catalog unavailable",
     });
+    await expect
+      .poll(() =>
+        executor.listAcpModels(sink, { agent: "cursor" }),
+      )
+      .toEqual({
+        agent: "cursor",
+        currentModel: "composer-2.5",
+        models: ["composer-2.5", "composer-2.5-fast"],
+        entries: [
+          { id: "composer-2.5", label: "composer-2.5" },
+          { id: "composer-2.5-fast", label: "composer-2.5-fast" },
+        ],
+        configOptions: [],
+      });
     expect(close).toHaveBeenNthCalledWith(1, {
       handle: expect.any(Object),
       reason: "model catalog complete",
@@ -322,23 +381,23 @@ describe("agent runtime executor ACP model catalogs", () => {
       createAcpxRuntime: async () => fake.runtime,
     });
 
-    await expect(
-      executor.listAcpModels(sink, { agent: "codex" }),
-    ).resolves.toMatchObject({
-      configOptions: [
-        {
-          id: "model",
-          name: "Model",
-          category: "model",
-          type: "select",
-          currentValue: "gpt-6",
-          options: [
-            { value: "gpt-6", name: "GPT-6" },
-            { value: "gpt-5.6", name: "GPT-5.6" },
-          ],
-        },
-      ],
-    });
+    await expect
+      .poll(() => executor.listAcpModels(sink, { agent: "codex" }))
+      .toMatchObject({
+        configOptions: [
+          {
+            id: "model",
+            name: "Model",
+            category: "model",
+            type: "select",
+            currentValue: "gpt-6",
+            options: [
+              { value: "gpt-6", name: "GPT-6" },
+              { value: "gpt-5.6", name: "GPT-5.6" },
+            ],
+          },
+        ],
+      });
   });
 });
 

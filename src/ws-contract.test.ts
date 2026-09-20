@@ -271,18 +271,30 @@ describe("agent-runtime websocket contract", () => {
       token: running.token,
     });
     try {
-      const [cursor, codex] = await Promise.all([
+      const first = await Promise.all([
         bridge.invoke("desktop_agent_acp_models", { agent: "cursor" }),
         bridge.invoke("desktop_agent_acp_models", { agent: "codex" }),
       ]);
-      expect(cursor).toMatchObject({
-        agent: "cursor",
-        models: ["composer", "composer-fast"],
-      });
-      expect(codex).toMatchObject({
-        agent: "codex",
-        models: ["gpt-test"],
-      });
+      expect(first[0]).toMatchObject({ agent: "cursor" });
+      expect(first[1]).toMatchObject({ agent: "codex" });
+      await expect
+        .poll(async () => {
+          const [cursor, codex] = await Promise.all([
+            bridge.invoke("desktop_agent_acp_models", { agent: "cursor" }),
+            bridge.invoke("desktop_agent_acp_models", { agent: "codex" }),
+          ]);
+          return { cursor, codex };
+        })
+        .toMatchObject({
+          cursor: {
+            agent: "cursor",
+            models: ["composer", "composer-fast"],
+          },
+          codex: {
+            agent: "codex",
+            models: ["gpt-test"],
+          },
+        });
       expect(
         bridge.capabilities["agent-runtime"]?.details?.sessionConfiguration,
       ).toBe("configure");

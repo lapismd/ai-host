@@ -91,12 +91,15 @@ export type AcpPermissionDecision = {
     "allow_once" | "allow_always" | "reject_once" | "reject_always" | "cancel";
 };
 
+export const ACP_MODEL_CATALOG_UNAVAILABLE = "catalog unavailable";
+
 export type AcpModelCatalog = {
   agent: string;
   currentModel?: string;
   models: string[];
   entries: AcpModelEntry[];
   configOptions: AcpConfigOption[];
+  error?: string;
 };
 
 export type AcpConfigOption = {
@@ -291,6 +294,8 @@ export function createAgentRuntimeExecutor(options?: {
   const acpSessions = new Map<string, AcpSessionState>();
   const pendingAcpSessions = new Map<string, PendingAcpSessionState>();
   const pendingApprovals = new Map<string, PendingAcpApproval>();
+  const lastGoodCatalogs = new Map<string, AcpModelCatalog>();
+  const catalogRefresh = new Map<string, Promise<void>>();
   const createAcpx = options?.createAcpxRuntime ?? defaultCreateAcpxRuntime;
   const agentRegistry = options?.agentRegistry ?? createAcpAgentRegistry();
   const permissionTimeoutMs = normalizePositiveDuration(
@@ -669,77 +674,42 @@ export function createAgentRuntimeExecutor(options?: {
               (session) => !session.restricted && session.agentId === agent.id,
             );
       if (liveSession?.runtime.getStatus) {
-        return modelCatalogFromStatus(
+        const catalog = modelCatalogFromStatus(
           agent.id,
           await liveSession.runtime.getStatus({ handle: liveSession.handle }),
         );
+        rememberLastGoodCatalog(lastGoodCatalogs, catalog);
+        return catalog;
       }
-      const sessionId = randomUUID();
-      let sequence = 0;
-      const catalogSink: AgentRuntimeInputSink = {
-        sendRuntimeEvent(event) {
-          sequence += 1;
-          sink.sendRuntimeEvent({
-            sessionId,
-            runId: "model-catalog",
-            sequence,
-            event: {
-              type: event.type,
-              event: event.event,
-              request: event.request,
-            },
-          });
-        },
-        sendProcessMessage: (event) => sink.sendProcessMessage(event),
-      };
-      const runtime = await createAcpx(
-        catalogSink,
-        sessionId,
-        { ...payload, agent: agent.id },
-        pendingApprovals,
-        {
+      if (requestedSessionId) {
+        const persisted = await readPersistedAcpModelCatalog({
+          sink,
+          payload,
           agent,
-          connectionId: sink.connectionId,
+          sessionId: requestedSessionId,
+          createAcpx,
+          pendingApprovals,
           permissionTimeoutMs,
-        },
-      );
-      if (requestedSessionId && runtime.getStatus) {
-        try {
-          return modelCatalogFromStatus(
-            agent.id,
-            await runtime.getStatus({
-              handle: {
-                sessionKey: requestedSessionId,
-                runtimeSessionName: requestedSessionId,
-              },
-            }),
-          );
-        } catch (error) {
-          if (!isMissingAcpSession(error)) throw error;
+        });
+        if (persisted) {
+          rememberLastGoodCatalog(lastGoodCatalogs, persisted);
+          return persisted;
         }
       }
-      const handle = await runtime.ensureSession({
-        sessionKey: `model-catalog:${agent.id}:${sessionId}`,
-        agent: agent.id,
-        mode: "oneshot",
-        cwd: payload.workspace,
-      });
-      try {
-        if (!runtime.getStatus) {
-          return {
-            agent: agent.id,
-            models: [],
-            entries: [],
-            configOptions: [],
-          };
-        }
-        return modelCatalogFromStatus(
-          agent.id,
-          await runtime.getStatus({ handle }),
-        );
-      } finally {
-        await closeDisposableAcpSession(runtime, handle);
+      const cached = lastGoodCatalogs.get(agent.id);
+      if (!cached) {
+        scheduleDisposableCatalogRefresh({
+          sink,
+          payload,
+          agent,
+          createAcpx,
+          pendingApprovals,
+          permissionTimeoutMs,
+          lastGoodCatalogs,
+          catalogRefresh,
+        });
       }
+      return cached ?? unavailableAcpModelCatalog(agent.id);
     },
 
     listAcpAgents() {
@@ -1014,6 +984,151 @@ function isMissingAcpSession(error: unknown): boolean {
   return (
     error instanceof Error && error.message.startsWith("ACP session not found:")
   );
+}
+
+function unavailableAcpModelCatalog(agent: string): AcpModelCatalog {
+  return {
+    agent,
+    models: [],
+    entries: [],
+    configOptions: [],
+    error: ACP_MODEL_CATALOG_UNAVAILABLE,
+  };
+}
+
+function rememberLastGoodCatalog(
+  cache: Map<string, AcpModelCatalog>,
+  catalog: AcpModelCatalog,
+): void {
+  if (catalog.error) return;
+  cache.set(catalog.agent, {
+    agent: catalog.agent,
+    ...(catalog.currentModel ? { currentModel: catalog.currentModel } : {}),
+    models: [...catalog.models],
+    entries: catalog.entries.map((entry) => ({ ...entry })),
+    configOptions: catalog.configOptions.map((option) => ({ ...option })),
+  });
+}
+
+function createCatalogSink(
+  sink: AgentHostSink,
+  sessionId: string,
+): AgentRuntimeInputSink {
+  let sequence = 0;
+  return {
+    sendRuntimeEvent(event) {
+      sequence += 1;
+      sink.sendRuntimeEvent({
+        sessionId,
+        runId: "model-catalog",
+        sequence,
+        event: {
+          type: event.type,
+          event: event.event,
+          request: event.request,
+        },
+      });
+    },
+    sendProcessMessage: (event) => sink.sendProcessMessage(event),
+  };
+}
+
+type CatalogRuntimeOptions = {
+  sink: AgentHostSink;
+  payload: Pick<AcpStartPayload, "workspace" | "agent" | "sessionId">;
+  agent: AcpAgentDefinition;
+  createAcpx: CreateAcpxRuntime;
+  pendingApprovals: Map<string, PendingAcpApproval>;
+  permissionTimeoutMs: number;
+};
+
+async function createCatalogRuntime(
+  options: CatalogRuntimeOptions,
+): Promise<AcpxRuntimeLike> {
+  const sessionId = randomUUID();
+  return options.createAcpx(
+    createCatalogSink(options.sink, sessionId),
+    sessionId,
+    { ...options.payload, agent: options.agent.id },
+    options.pendingApprovals,
+    {
+      agent: options.agent,
+      connectionId: options.sink.connectionId,
+      permissionTimeoutMs: options.permissionTimeoutMs,
+    },
+  );
+}
+
+async function readPersistedAcpModelCatalog(
+  options: CatalogRuntimeOptions & { sessionId: string },
+): Promise<AcpModelCatalog | undefined> {
+  const runtime = await createCatalogRuntime(options);
+  if (!runtime.getStatus) return undefined;
+  try {
+    return modelCatalogFromStatus(
+      options.agent.id,
+      await runtime.getStatus({
+        handle: {
+          sessionKey: options.sessionId,
+          runtimeSessionName: options.sessionId,
+        },
+      }),
+    );
+  } catch (error) {
+    if (!isMissingAcpSession(error)) throw error;
+    return undefined;
+  }
+}
+
+async function discoverDisposableAcpCatalog(
+  options: CatalogRuntimeOptions,
+): Promise<AcpModelCatalog> {
+  const runtime = await createCatalogRuntime(options);
+  const handle = await runtime.ensureSession({
+    sessionKey: `model-catalog:${options.agent.id}:${randomUUID()}`,
+    agent: options.agent.id,
+    mode: "oneshot",
+    cwd: options.payload.workspace,
+  });
+  try {
+    if (!runtime.getStatus) {
+      return {
+        agent: options.agent.id,
+        models: [],
+        entries: [],
+        configOptions: [],
+      };
+    }
+    return modelCatalogFromStatus(
+      options.agent.id,
+      await runtime.getStatus({ handle }),
+    );
+  } finally {
+    await closeDisposableAcpSession(runtime, handle);
+  }
+}
+
+function scheduleDisposableCatalogRefresh(
+  options: CatalogRuntimeOptions & {
+    lastGoodCatalogs: Map<string, AcpModelCatalog>;
+    catalogRefresh: Map<string, Promise<void>>;
+  },
+): void {
+  const agentId = options.agent.id;
+  if (options.catalogRefresh.has(agentId)) return;
+  const work = new Promise<void>((resolve) => {
+    setTimeout(() => {
+      void discoverDisposableAcpCatalog(options)
+        .then((catalog) =>
+          rememberLastGoodCatalog(options.lastGoodCatalogs, catalog),
+        )
+        .catch(() => undefined)
+        .finally(resolve);
+    }, 0);
+  }).finally(() => {
+    options.catalogRefresh.delete(agentId);
+  });
+  options.catalogRefresh.set(agentId, work);
 }
 
 export function parseAcpConfigOptions(value: unknown): AcpConfigOption[] {
