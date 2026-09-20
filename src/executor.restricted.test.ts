@@ -46,11 +46,14 @@ describe("default restricted ACP runtime", () => {
       new Map(),
     );
     const cwd = String(acpx.options?.cwd);
-    const stateDir = String(acpx.stateDir);
 
     expect(cwd).toMatch(/lapis-acp-restricted-/u);
     expect(cwd).not.toContain("/private/vault");
-    expect(stateDir).toBe(`${cwd}/.lapis/ai-sessions`);
+    expect(acpx.stateDir).toBeUndefined();
+    const store = acpx.options?.sessionStore as { save(record: unknown): Promise<void>; load(id: string): Promise<unknown> };
+    await store.save({ acpxRecordId: "restricted-session", messages: [{ text: "synthetic-only-secret" }] });
+    expect(await store.load("restricted-session")).toBeTruthy();
+    await expect(stat(`${cwd}/.lapis/ai-sessions`)).rejects.toMatchObject({ code: "ENOENT" });
     await expect(stat(cwd)).resolves.toBeTruthy();
     const onPermissionRequest = acpx.options?.onPermissionRequest as (
       request: Record<string, unknown>,
@@ -67,6 +70,7 @@ describe("default restricted ACP runtime", () => {
     });
 
     expect(acpx.close).toHaveBeenCalledOnce();
+    expect(await store.load("restricted-session")).toBeUndefined();
     await expect(stat(cwd)).rejects.toMatchObject({ code: "ENOENT" });
   });
 });

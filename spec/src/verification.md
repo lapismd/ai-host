@@ -1,5 +1,6 @@
 # Verification
 
+
 | ID           | Status      | Evidence                                                                                                                                                                                                                                                                                                                                |
 | ------------ | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AH-GOV-001   | Implemented | `pnpm spec:build` builds the standalone mdBook.                                                                                                                                                                                                                                                                                         |
@@ -56,3 +57,5 @@
 | AH-MCP-006   | Implemented | Tool-bridge tests resolve the default stdio shim from source and built module locations without consulting the caller entrypoint; the real Codex ACP smoke lane starts `lapis-tools` from that launcher.                                                                                                                                |
 | AH-MCP-007   | Implemented | Tool-bridge tests verify an embedding executable can supply the exact MCP shim command and arguments while bridge credentials remain environment-only; executor native process tests verify required MCP startup and environment-name forwarding without credential values in argv.                                                     |
 | AH-OPS-001   | Implemented | `scripts/library-boundary.test.ts` verifies transport exports, absent package bins and absent operator entrypoints.                                                                                                                                                                                                                     |
+| AH-ACP-016 | Implemented | src/volatile-session-store.test.ts; src/executor.restricted.test.ts prove volatile storage and disposal |
+| AH-ACP-017 | Implemented | src/executor.capture.test.ts preserves structured runtime payloads; acpx 0.17.1 public contract |

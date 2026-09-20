@@ -64,7 +64,7 @@ export default defineConfig(tableRequirements(), {
         },
         {
           pattern:
-            "^src/(?:executor|acp-agent|acp-session-options|acp-model-catalog)\\.ts$",
+            "^src/(?:executor|acp-agent|acp-session-options|acp-model-catalog|volatile-session-store)\\.ts$",
           chapters: ["spec/src/executor.md"],
         },
         {

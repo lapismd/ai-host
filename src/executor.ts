@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { VolatileSessionStore } from "./volatile-session-store";
 import {
   createAcpAgentRegistry,
   resolveAcpAgent,
@@ -439,6 +440,18 @@ export function createAgentRuntimeExecutor(options?: {
     }
     void (async () => {
       try {
+        emitRuntimeEvent(session, runId, {
+          sessionId: session.sessionId,
+          type: "event",
+          event: {
+            type: "capture_coverage",
+            version: 1,
+            source: "acpx",
+            observations: "normalized",
+            sessionStorage: "volatile",
+            excluded: ["native-agent-storage", "native-provider-traffic", "unexposed-acp-updates"],
+          },
+        });
         for await (const event of turn.events) {
           emitRuntimeEvent(session, runId, {
             sessionId: session.sessionId,
@@ -1213,7 +1226,6 @@ export async function defaultCreateAcpxRuntime(
     createAgentRegistry: (params?: {
       overrides?: Record<string, string | string[]>;
     }) => { resolve(agent: string): string | string[] };
-    createRuntimeStore: (options: { stateDir: string }) => unknown;
   };
   try {
     acpx = (await import("acpx/runtime")) as unknown as typeof acpx;
@@ -1226,6 +1238,7 @@ export async function defaultCreateAcpxRuntime(
     ? await mkdtemp(join(tmpdir(), "lapis-acp-restricted-"))
     : undefined;
   const cwd = temporaryCwd ?? payload.workspace ?? process.cwd();
+  const sessionStore = new VolatileSessionStore();
   let runtime: AcpxRuntimeLike;
   try {
     const identity = vcsEnvironment(payload);
@@ -1246,9 +1259,7 @@ export async function defaultCreateAcpxRuntime(
       : configured;
     runtime = acpx.createAcpRuntime({
       cwd,
-      sessionStore: acpx.createRuntimeStore({
-        stateDir: `${cwd}/.lapis/ai-sessions`,
-      }),
+      sessionStore,
       agentRegistry: registry,
       mcpServers: toAcpxMcpServers(payload.mcpServers),
       permissionMode: "deny-all",
@@ -1323,19 +1334,20 @@ export async function defaultCreateAcpxRuntime(
       },
     });
   } catch (error) {
+    sessionStore.dispose();
     if (temporaryCwd) {
       await rm(temporaryCwd, { recursive: true, force: true });
     }
     throw error;
   }
-  if (!temporaryCwd) return runtime;
   const close = runtime.close.bind(runtime);
   const ensureSession = runtime.ensureSession.bind(runtime);
   runtime.ensureSession = async (input) => {
     try {
       return await ensureSession(input);
     } catch (error) {
-      await rm(temporaryCwd, { recursive: true, force: true });
+      sessionStore.dispose();
+      if (temporaryCwd) await rm(temporaryCwd, { recursive: true, force: true });
       throw error;
     }
   };
@@ -1343,7 +1355,8 @@ export async function defaultCreateAcpxRuntime(
     try {
       await close(input);
     } finally {
-      await rm(temporaryCwd, { recursive: true, force: true });
+      sessionStore.dispose();
+      if (temporaryCwd) await rm(temporaryCwd, { recursive: true, force: true });
     }
   };
   return runtime;

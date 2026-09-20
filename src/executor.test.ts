@@ -355,7 +355,7 @@ describe("agent runtime executor sequencing", () => {
       first.sessionId,
       "first",
     );
-    await expect.poll(() => sink.sendRuntimeEvent.mock.calls.length).toBe(1);
+    await expect.poll(() => sink.sendRuntimeEvent.mock.calls.length).toBe(2);
 
     await executor.startAcpSession(sink, {
       agent: "codex",
@@ -366,13 +366,13 @@ describe("agent runtime executor sequencing", () => {
       first.sessionId,
       "second",
     );
-    await expect.poll(() => sink.sendRuntimeEvent.mock.calls.length).toBe(2);
+    await expect.poll(() => sink.sendRuntimeEvent.mock.calls.length).toBe(4);
 
     expect(createAcpxRuntime).toHaveBeenCalledTimes(1);
     expect(firstRun.runId).not.toBe(secondRun.runId);
     expect(
       sink.sendRuntimeEvent.mock.calls.map(([event]) => event.sequence),
-    ).toEqual([1, 2]);
+    ).toEqual([1, 2, 3, 4]);
     await executor.closeAcpSession(first.sessionId);
     sink.sendRuntimeEvent.mockClear();
   });

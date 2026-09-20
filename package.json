@@ -75,7 +75,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "acpx": "^0.13.0",
+    "acpx": "0.17.1",
     "ws": "^8.18.3"
   },
   "devDependencies": {

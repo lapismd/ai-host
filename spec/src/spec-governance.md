@@ -47,3 +47,6 @@ Operator implementation and executable release workflows now belong to the
 sibling AI Controller. This repository validates the transport library, its
 public declarations and private shim packaging; removed CLI paths remain mapped
 so accidental reintroduction still requires canonical review.
+
+The executor mapping includes `src/volatile-session-store.ts`; its bounded
+execution state is governed by the executor chapter and verified independently.

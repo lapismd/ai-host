@@ -1,5 +1,8 @@
 # Architecture
 
+The supported acpx runtime dependency is 0.17.1. Controller-owned session stores
+are volatile; durable, sanitized transcript ownership belongs to ai-controller.
+
 The package publishes built JavaScript and declarations for transport mechanics,
 a compatibility `./client` bridge and a vault-free `./file-tools` kernel.
 It has no operator executable or service lifecycle. The sibling AI Controller
