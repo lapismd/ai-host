@@ -20,6 +20,12 @@ describe("ACP model catalog labels", () => {
       label: "composer-2.5",
       badges: ["Fast"],
     });
+    expect(
+      normalizeAcpModelEntry("cursor", "composer-2.5", "Composer 2.5"),
+    ).toEqual({
+      id: "composer-2.5",
+      label: "Composer 2.5",
+    });
   });
 
   it("uses the Codex id as the label unless a display name is provided", () => {

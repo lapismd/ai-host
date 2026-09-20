@@ -1,14 +1,35 @@
 import { describe, expect, it, vi } from "vitest";
+import { catalogEntriesForAgent } from "./acp-model-catalog";
 import {
   createAgentRuntimeExecutor,
   toAcpxMcpServers,
+  type AcpModelCatalog,
   type AcpxRuntimeLike,
   type CreateAcpxRuntime,
+  type ListAgentInventory,
 } from "./executor";
 
 const sink = {
   sendRuntimeEvent: vi.fn(),
   sendProcessMessage: vi.fn(),
+};
+
+function inventoryCatalog(
+  agent: string,
+  models: string[],
+  extra: Partial<AcpModelCatalog> = {},
+): AcpModelCatalog {
+  return {
+    agent,
+    models,
+    entries: catalogEntriesForAgent(agent, models),
+    configOptions: [],
+    ...extra,
+  };
+}
+
+const unusedInventory: ListAgentInventory = async (agent) => {
+  throw new Error(`inventory must not run for ${agent.id}`);
 };
 
 function createRuntime(configOptionKeys: string[]) {
@@ -148,22 +169,27 @@ describe("agent runtime executor ACP model catalogs", () => {
     });
     fake.runtime.getStatus = getStatus;
     const createAcpxRuntime = vi.fn(async () => fake.runtime);
-    const executor = createAgentRuntimeExecutor({ createAcpxRuntime });
+    const listAgentInventory = vi.fn<ListAgentInventory>(async () =>
+      inventoryCatalog("codex", ["gpt-6", "gpt-5.6"], { currentModel: "gpt-6" }),
+    );
+    const executor = createAgentRuntimeExecutor({
+      createAcpxRuntime,
+      listAgentInventory,
+    });
 
     await expect(
       executor.listAcpModels(sink, {
         agent: "codex",
         sessionId: "persisted-session",
       }),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       agent: "codex",
-      models: [],
-      entries: [],
-      configOptions: [],
-      error: "catalog unavailable",
+      currentModel: "gpt-6",
+      models: ["gpt-6", "gpt-5.6"],
     });
     expect(createAcpxRuntime).not.toHaveBeenCalled();
     expect(getStatus).not.toHaveBeenCalled();
+    expect(listAgentInventory).toHaveBeenCalledOnce();
   });
 
   it("reads a matching live session without starting or closing another runtime", async () => {
@@ -190,7 +216,11 @@ describe("agent runtime executor ACP model catalogs", () => {
     });
     const createAcpxRuntime = vi.fn(async () => fake.runtime);
     const close = vi.spyOn(fake.runtime, "close");
-    const executor = createAgentRuntimeExecutor({ createAcpxRuntime });
+    const listAgentInventory = vi.fn(unusedInventory);
+    const executor = createAgentRuntimeExecutor({
+      createAcpxRuntime,
+      listAgentInventory,
+    });
     const started = await executor.startAcpSession(sink, {
       agent: "codex",
       workspace: "/tmp/live-agent",
@@ -214,6 +244,7 @@ describe("agent runtime executor ACP model catalogs", () => {
     });
     expect(createAcpxRuntime).toHaveBeenCalledTimes(1);
     expect(close).not.toHaveBeenCalled();
+    expect(listAgentInventory).not.toHaveBeenCalled();
 
     await executor.closeAcpSession(started.sessionId);
   });
@@ -227,7 +258,11 @@ describe("agent runtime executor ACP model catalogs", () => {
       },
     });
     const createAcpxRuntime = vi.fn(async () => fake.runtime);
-    const executor = createAgentRuntimeExecutor({ createAcpxRuntime });
+    const listAgentInventory = vi.fn(unusedInventory);
+    const executor = createAgentRuntimeExecutor({
+      createAcpxRuntime,
+      listAgentInventory,
+    });
     const started = await executor.startAcpSession(sink, {
       agent: "codex",
       workspace: "/tmp/cached-agent",
@@ -238,6 +273,7 @@ describe("agent runtime executor ACP model catalogs", () => {
     });
     await executor.closeAcpSession(started.sessionId);
     createAcpxRuntime.mockClear();
+    listAgentInventory.mockClear();
 
     await expect(
       executor.listAcpModels(sink, {
@@ -250,12 +286,23 @@ describe("agent runtime executor ACP model catalogs", () => {
       models: ["gpt-6", "gpt-5.6"],
     });
     expect(createAcpxRuntime).not.toHaveBeenCalled();
+    expect(listAgentInventory).not.toHaveBeenCalled();
   });
 
-  it("returns catalog unavailable without starting a oneshot session on the request path", async () => {
+  it("returns catalog unavailable without starting an ACP runtime on the request path", async () => {
     const fake = createRuntime(["model"]);
     const createAcpxRuntime = vi.fn(async () => fake.runtime);
-    const executor = createAgentRuntimeExecutor({ createAcpxRuntime });
+    const listAgentInventory = vi.fn<ListAgentInventory>(async (agent) => ({
+      agent: agent.id,
+      models: [],
+      entries: [],
+      configOptions: [],
+      error: "catalog unavailable",
+    }));
+    const executor = createAgentRuntimeExecutor({
+      createAcpxRuntime,
+      listAgentInventory,
+    });
 
     await expect(
       executor.listAcpModels(sink, { agent: "codex" }),
@@ -267,105 +314,80 @@ describe("agent runtime executor ACP model catalogs", () => {
       error: "catalog unavailable",
     });
     expect(createAcpxRuntime).not.toHaveBeenCalled();
+    expect(listAgentInventory).toHaveBeenCalledOnce();
   });
 
-  it("keeps Cursor models when backend session close is unsupported", async () => {
+  it("lists Cursor models from inventory without starting ACP", async () => {
     const fake = createRuntime(["mode", "model"]);
-    fake.runtime.getStatus = async () => ({
-      models: {
-        currentModelId: "composer-2.5",
-        availableModelIds: ["composer-2.5", "composer-2.5-fast"],
-      },
-    });
-    const unsupported = Object.assign(
-      new Error("Agent does not support session/close"),
-      { code: "ACP_BACKEND_UNSUPPORTED_CONTROL" },
+    const createAcpxRuntime = vi.fn(async () => fake.runtime);
+    const listAgentInventory = vi.fn<ListAgentInventory>(async () =>
+      inventoryCatalog("cursor", ["composer-2.5", "composer-2.5-fast"], {
+        currentModel: "composer-2.5",
+      }),
     );
-    const close = vi
-      .fn()
-      .mockRejectedValueOnce(unsupported)
-      .mockResolvedValueOnce(undefined);
-    fake.runtime.close = close;
     const executor = createAgentRuntimeExecutor({
-      createAcpxRuntime: async () => fake.runtime,
+      createAcpxRuntime,
+      listAgentInventory,
     });
 
     await expect(
       executor.listAcpModels(sink, { agent: "cursor" }),
     ).resolves.toEqual({
       agent: "cursor",
-      models: [],
-      entries: [],
+      currentModel: "composer-2.5",
+      models: ["composer-2.5", "composer-2.5-fast"],
+      entries: [
+        { id: "composer-2.5", label: "composer-2.5" },
+        { id: "composer-2.5-fast", label: "composer-2.5-fast" },
+      ],
       configOptions: [],
-      error: "catalog unavailable",
     });
-    await expect
-      .poll(() =>
-        executor.listAcpModels(sink, { agent: "cursor" }),
-      )
-      .toEqual({
-        agent: "cursor",
-        currentModel: "composer-2.5",
-        models: ["composer-2.5", "composer-2.5-fast"],
-        entries: [
-          { id: "composer-2.5", label: "composer-2.5" },
-          { id: "composer-2.5-fast", label: "composer-2.5-fast" },
-        ],
-        configOptions: [],
-      });
-    expect(close).toHaveBeenNthCalledWith(1, {
-      handle: expect.any(Object),
-      reason: "model catalog complete",
-      discardPersistentState: true,
-    });
-    expect(close).toHaveBeenNthCalledWith(2, {
-      handle: expect.any(Object),
-      reason: "model catalog complete",
-    });
+    expect(createAcpxRuntime).not.toHaveBeenCalled();
+    expect(listAgentInventory).toHaveBeenCalledOnce();
   });
 
-  it("returns validated runtime configuration options", async () => {
+  it("returns validated runtime configuration options from inventory", async () => {
     const fake = createRuntime(["model", "reasoning_effort"]);
-    fake.runtime.getStatus = async () => ({
-      models: { currentModelId: "gpt-6" },
-      details: {
-        configOptions: [
-          {
-            id: "model",
-            name: "Model",
-            category: "model",
-            type: "select",
-            currentValue: "gpt-6",
-            options: [
-              { value: "gpt-6", name: "GPT-6" },
-              { value: "gpt-5.6", name: "GPT-5.6" },
-            ],
-          },
-          { id: "invalid", name: "Invalid", type: "text", currentValue: "x" },
-        ],
-      },
-    });
+    const createAcpxRuntime = vi.fn(async () => fake.runtime);
     const executor = createAgentRuntimeExecutor({
-      createAcpxRuntime: async () => fake.runtime,
+      createAcpxRuntime,
+      listAgentInventory: async () =>
+        inventoryCatalog("codex", ["gpt-6", "gpt-5.6"], {
+          currentModel: "gpt-6",
+          configOptions: [
+            {
+              id: "model",
+              name: "Model",
+              category: "model",
+              type: "select",
+              currentValue: "gpt-6",
+              options: [
+                { value: "gpt-6", name: "GPT-6" },
+                { value: "gpt-5.6", name: "GPT-5.6" },
+              ],
+            },
+          ],
+        }),
     });
 
-    await expect
-      .poll(() => executor.listAcpModels(sink, { agent: "codex" }))
-      .toMatchObject({
-        configOptions: [
-          {
-            id: "model",
-            name: "Model",
-            category: "model",
-            type: "select",
-            currentValue: "gpt-6",
-            options: [
-              { value: "gpt-6", name: "GPT-6" },
-              { value: "gpt-5.6", name: "GPT-5.6" },
-            ],
-          },
-        ],
-      });
+    await expect(
+      executor.listAcpModels(sink, { agent: "codex" }),
+    ).resolves.toMatchObject({
+      configOptions: [
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "gpt-6",
+          options: [
+            { value: "gpt-6", name: "GPT-6" },
+            { value: "gpt-5.6", name: "GPT-5.6" },
+          ],
+        },
+      ],
+    });
+    expect(createAcpxRuntime).not.toHaveBeenCalled();
   });
 });
 

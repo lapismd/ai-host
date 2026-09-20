@@ -15,11 +15,34 @@ import {
 } from "./client";
 import {
   createAgentRuntimeExecutor,
+  type AcpModelCatalog,
   type AcpxRuntimeLike,
   type CreateAcpxRuntime,
 } from "./executor";
 import { serveAgentHost, type RunningAgentHost } from "./serve";
 import type { ToolBridgeBrokerOptions } from "./tool-bridge";
+
+function inventoryForAgent(agent: { id: string }): AcpModelCatalog {
+  if (agent.id === "cursor") {
+    return {
+      agent: "cursor",
+      currentModel: "composer",
+      models: ["composer", "composer-fast"],
+      entries: [
+        { id: "composer", label: "composer" },
+        { id: "composer-fast", label: "composer-fast" },
+      ],
+      configOptions: [],
+    };
+  }
+  return {
+    agent: agent.id,
+    currentModel: "gpt-test",
+    models: ["gpt-test"],
+    entries: [{ id: "gpt-test", label: "gpt-test" }],
+    configOptions: [],
+  };
+}
 
 function createFakeAcpx(): CreateAcpxRuntime {
   return async (sink, sessionId, payload, pendingApprovals) => {
@@ -103,6 +126,7 @@ describe("agent-runtime websocket contract", () => {
       {
         executor: createAgentRuntimeExecutor({
           createAcpxRuntime,
+          listAgentInventory: async (agent) => inventoryForAgent(agent),
           toolBridgeOptions,
         }),
         print: () => {},
@@ -125,6 +149,7 @@ describe("agent-runtime websocket contract", () => {
       {
         executor: createAgentRuntimeExecutor({
           createAcpxRuntime: createFakeAcpx(),
+          listAgentInventory: async (agent) => inventoryForAgent(agent),
           agentRegistry: createAcpAgentRegistry([
             {
               id: "claude",
@@ -570,6 +595,7 @@ describe("agent-runtime websocket contract", () => {
       {
         executor: createAgentRuntimeExecutor({
           createAcpxRuntime: createRuntime,
+          listAgentInventory: async (agent) => inventoryForAgent(agent),
         }),
         print: () => {},
       },

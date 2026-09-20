@@ -22,6 +22,7 @@ import {
   toAcpxThinkingValue,
   type AcpxSessionOptions,
 } from "./acp-session-options";
+import { listAcpAgentInventory } from "./acp-model-inventory";
 import {
   catalogEntriesForAgent,
   type AcpModelEntry,
@@ -278,8 +279,14 @@ export type AgentRuntimeExecutor = {
   close(): Promise<void>;
 };
 
+export type ListAgentInventory = (
+  agent: AcpAgentDefinition,
+  payload: Pick<AcpStartPayload, "workspace">,
+) => Promise<AcpModelCatalog>;
+
 export function createAgentRuntimeExecutor(options?: {
   createAcpxRuntime?: CreateAcpxRuntime;
+  listAgentInventory?: ListAgentInventory;
   agentRegistry?: AcpAgentRegistry;
   permissionTimeoutMs?: number;
   disconnectGraceMs?: number;
@@ -297,6 +304,10 @@ export function createAgentRuntimeExecutor(options?: {
   const lastGoodCatalogs = new Map<string, AcpModelCatalog>();
   const catalogRefresh = new Map<string, Promise<void>>();
   const createAcpx = options?.createAcpxRuntime ?? defaultCreateAcpxRuntime;
+  const listAgentInventory =
+    options?.listAgentInventory ??
+    ((agent, payload) =>
+      listAcpAgentInventory(agent, { workspace: payload.workspace }));
   const agentRegistry = options?.agentRegistry ?? createAcpAgentRegistry();
   const permissionTimeoutMs = normalizePositiveDuration(
     options?.permissionTimeoutMs,
@@ -682,19 +693,32 @@ export function createAgentRuntimeExecutor(options?: {
         return catalog;
       }
       const cached = lastGoodCatalogs.get(agent.id);
-      if (!cached) {
-        scheduleDisposableCatalogRefresh({
-          sink,
-          payload,
-          agent,
-          createAcpx,
-          pendingApprovals,
-          permissionTimeoutMs,
-          lastGoodCatalogs,
-          catalogRefresh,
-        });
+      if (cached) return cached;
+      const pending = catalogRefresh.get(agent.id);
+      if (pending) {
+        await pending;
+        return (
+          lastGoodCatalogs.get(agent.id) ?? unavailableAcpModelCatalog(agent.id)
+        );
       }
-      return cached ?? unavailableAcpModelCatalog(agent.id);
+      const work = Promise.resolve()
+        .then(() =>
+          listAgentInventory(agent, { workspace: payload.workspace }),
+        )
+        .then((catalog) => {
+          if (catalog.models.length > 0) {
+            rememberLastGoodCatalog(lastGoodCatalogs, catalog);
+          }
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          catalogRefresh.delete(agent.id);
+        });
+      catalogRefresh.set(agent.id, work);
+      await work;
+      return (
+        lastGoodCatalogs.get(agent.id) ?? unavailableAcpModelCatalog(agent.id)
+      );
     },
 
     listAcpAgents() {
@@ -979,7 +1003,7 @@ function rememberLastGoodCatalog(
   cache: Map<string, AcpModelCatalog>,
   catalog: AcpModelCatalog,
 ): void {
-  if (catalog.error) return;
+  if (catalog.error || catalog.models.length === 0) return;
   cache.set(catalog.agent, {
     agent: catalog.agent,
     ...(catalog.currentModel ? { currentModel: catalog.currentModel } : {}),
@@ -987,106 +1011,6 @@ function rememberLastGoodCatalog(
     entries: catalog.entries.map((entry) => ({ ...entry })),
     configOptions: catalog.configOptions.map((option) => ({ ...option })),
   });
-}
-
-function createCatalogSink(
-  sink: AgentHostSink,
-  sessionId: string,
-): AgentRuntimeInputSink {
-  let sequence = 0;
-  return {
-    sendRuntimeEvent(event) {
-      sequence += 1;
-      sink.sendRuntimeEvent({
-        sessionId,
-        runId: "model-catalog",
-        sequence,
-        event: {
-          type: event.type,
-          event: event.event,
-          request: event.request,
-        },
-      });
-    },
-    sendProcessMessage: (event) => sink.sendProcessMessage(event),
-  };
-}
-
-type CatalogRuntimeOptions = {
-  sink: AgentHostSink;
-  payload: Pick<AcpStartPayload, "workspace" | "agent" | "sessionId">;
-  agent: AcpAgentDefinition;
-  createAcpx: CreateAcpxRuntime;
-  pendingApprovals: Map<string, PendingAcpApproval>;
-  permissionTimeoutMs: number;
-};
-
-async function createCatalogRuntime(
-  options: CatalogRuntimeOptions,
-): Promise<AcpxRuntimeLike> {
-  const sessionId = randomUUID();
-  return options.createAcpx(
-    createCatalogSink(options.sink, sessionId),
-    sessionId,
-    { ...options.payload, agent: options.agent.id },
-    options.pendingApprovals,
-    {
-      agent: options.agent,
-      connectionId: options.sink.connectionId,
-      permissionTimeoutMs: options.permissionTimeoutMs,
-    },
-  );
-}
-
-async function discoverDisposableAcpCatalog(
-  options: CatalogRuntimeOptions,
-): Promise<AcpModelCatalog> {
-  const runtime = await createCatalogRuntime(options);
-  const handle = await runtime.ensureSession({
-    sessionKey: `model-catalog:${options.agent.id}:${randomUUID()}`,
-    agent: options.agent.id,
-    mode: "oneshot",
-    cwd: options.payload.workspace,
-  });
-  try {
-    if (!runtime.getStatus) {
-      return {
-        agent: options.agent.id,
-        models: [],
-        entries: [],
-        configOptions: [],
-      };
-    }
-    return modelCatalogFromStatus(
-      options.agent.id,
-      await runtime.getStatus({ handle }),
-    );
-  } finally {
-    await closeDisposableAcpSession(runtime, handle);
-  }
-}
-
-function scheduleDisposableCatalogRefresh(
-  options: CatalogRuntimeOptions & {
-    lastGoodCatalogs: Map<string, AcpModelCatalog>;
-    catalogRefresh: Map<string, Promise<void>>;
-  },
-): void {
-  const agentId = options.agent.id;
-  if (options.catalogRefresh.has(agentId)) return;
-  const work = new Promise<void>((resolve) => {
-    setTimeout(() => {
-      void discoverDisposableAcpCatalog(options)
-        .then((catalog) =>
-          rememberLastGoodCatalog(options.lastGoodCatalogs, catalog),
-        )
-        .catch(() => undefined)
-        .finally(resolve);
-    }, 0);
-  }).finally(() => {
-    options.catalogRefresh.delete(agentId);
-  });
-  options.catalogRefresh.set(agentId, work);
 }
 
 export function parseAcpConfigOptions(value: unknown): AcpConfigOption[] {
@@ -1248,28 +1172,6 @@ function emitRuntimeEvent(
       request: input.request,
     },
   });
-}
-
-async function closeDisposableAcpSession(
-  runtime: AcpxRuntimeLike,
-  handle: AcpRuntimeHandle,
-): Promise<void> {
-  const input = { handle, reason: "model catalog complete" };
-  try {
-    await runtime.close({ ...input, discardPersistentState: true });
-  } catch (error) {
-    if (!isUnsupportedAcpControl(error)) throw error;
-    await runtime.close(input);
-  }
-}
-
-function isUnsupportedAcpControl(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === "ACP_BACKEND_UNSUPPORTED_CONTROL"
-  );
 }
 
 async function thinkingConfigurationKey(

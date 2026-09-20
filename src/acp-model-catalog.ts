@@ -50,9 +50,10 @@ export function normalizeAcpModelEntry(
   if (agent === "cursor") {
     const parsed = parseBracketAttributes(trimmed);
     const badges = badgesFromAttributes(parsed.attrs);
+    const named = displayName?.trim();
     return {
       id: trimmed,
-      label: parsed.label,
+      label: /\[/u.test(trimmed) ? parsed.label : named || parsed.label,
       ...(badges.length > 0 ? { badges } : {}),
     };
   }

@@ -19,7 +19,7 @@ MUST update the mapped chapter in the same Jujutsu change.
 | --------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
 | `src/serve.ts`, `src/parse-cli.ts`, `src/cli.ts`, `src/token.ts`                                                                                          | `protocol.md`        |
 | `src/ws-server.ts`, `src/protocol.ts`, `src/replay-buffer.ts`, `src/client.ts`                                                                            | `protocol.md`        |
-| `src/executor.ts`, `src/acp-agent.ts`, `src/acp-session-options.ts`, `src/acp-model-catalog.ts`                                                           | `executor.md`        |
+| `src/executor.ts`, `src/acp-agent.ts`, `src/acp-session-options.ts`, `src/acp-model-catalog.ts`, `src/acp-model-inventory.ts`, `src/cursor-model-inventory.ts`, `src/codex-model-inventory.ts`, `src/inventory-process.ts` | `executor.md`        |
 | `src/mcp-shim.ts`, `src/mcp-shim-cli.ts`, `src/tool-bridge.ts`                                                                                            | `executor.md`        |
 | `src/file-tools/`                                                                                                                                         | `file-tools.md`      |
 | `src/cli/**`, `src/cli.ts`, `src/main.ts`, `deno.json`, `deno.lock`, `docs/cli/**`, `scripts/build-cli.ts`, `scripts/docs-cli.ts`, `scripts/smoke-cli.ts` | `cli.md`             |

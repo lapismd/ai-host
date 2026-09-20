@@ -7,10 +7,10 @@ The package publishes built JavaScript and declarations for transport mechanics,
 a compatibility `./client` bridge and a vault-free `./file-tools` kernel.
 It has no operator executable or service lifecycle. The sibling AI Controller
 owns durable orchestration, the shared application SDK and standalone Deno CLI.
-Disposable model discovery remains transport-owned. Public `listAcpModels`
-returns a live session, a caller-identified persisted session, or the last-good
-in-process catalog; a cache miss is `catalog unavailable` and MUST NOT start a
-oneshot session on the request path. The private MCP stdio shim
+Agent model discovery remains transport-owned. Public `listAcpModels`
+returns a live session, the last-good in-process catalog, or the agent's
+CLI/app-server inventory. A cache miss MUST NOT start a oneshot ACP session.
+The private MCP stdio shim
 is a subprocess helper, not an installed command; embedding executables may
 supply their own launcher and call the exported `runMcpShim` function.
 Protocol-v4 session configuration preserves that boundary: consumers request

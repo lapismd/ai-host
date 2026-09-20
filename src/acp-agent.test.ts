@@ -76,6 +76,7 @@ describe("ACP agent registry", () => {
             id: "claude",
             label: "Claude",
             command: ["claude-agent-acp"],
+            listModelsCommand: ["claude-agent-acp", "--list-models"],
           },
         ],
       }),
@@ -85,12 +86,18 @@ describe("ACP agent registry", () => {
         label: "Claude",
         enabled: true,
         command: ["claude-agent-acp"],
+        listModelsCommand: ["claude-agent-acp", "--list-models"],
         mcpTransport: "stdio",
       },
     ]);
     expect(() =>
       parseAcpAgentDefinitions({ agents: [{ command: [1] }] }),
     ).toThrow(/command/i);
+    expect(() =>
+      parseAcpAgentDefinitions({
+        agents: [{ id: "x", label: "X", listModelsCommand: [1] }],
+      }),
+    ).toThrow(/listModelsCommand/i);
   });
 });
 

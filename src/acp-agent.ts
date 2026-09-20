@@ -5,6 +5,7 @@ export type AcpAgentDefinition = {
   label: string;
   enabled: boolean;
   command?: string | string[];
+  listModelsCommand?: string | string[];
   mcpTransport: AcpAgentMcpTransport;
 };
 
@@ -48,7 +49,13 @@ export function createAcpAgentRegistry(
       if (!definition || !definition.enabled) {
         throw new Error(`ACP agent is not enabled: ${normalized}`);
       }
-      return { ...definition, command: cloneCommand(definition.command) };
+      return {
+        ...definition,
+        command: cloneCommand(definition.command),
+        ...(definition.listModelsCommand
+          ? { listModelsCommand: cloneCommand(definition.listModelsCommand) }
+          : {}),
+      };
     },
     list() {
       return [...agents.values()]
@@ -56,6 +63,9 @@ export function createAcpAgentRegistry(
         .map((agent) => ({
           ...agent,
           command: cloneCommand(agent.command),
+          ...(agent.listModelsCommand
+            ? { listModelsCommand: cloneCommand(agent.listModelsCommand) }
+            : {}),
         }));
     },
   };
@@ -83,6 +93,7 @@ function normalizeAcpAgentDefinition(
   if (!label) throw new Error(`ACP agent ${id} requires a label`);
   if (label.length > 100) throw new Error(`ACP agent ${id} label is too long`);
   const command = normalizeCommand(input.command, id);
+  const listModelsCommand = normalizeCommand(input.listModelsCommand, id);
   if (input.mcpTransport !== "stdio" && input.mcpTransport !== "http") {
     throw new Error(`ACP agent ${id} has an invalid MCP transport`);
   }
@@ -91,6 +102,7 @@ function normalizeAcpAgentDefinition(
     label,
     enabled: input.enabled === true,
     ...(command ? { command } : {}),
+    ...(listModelsCommand ? { listModelsCommand } : {}),
     mcpTransport: input.mcpTransport,
   };
 }
@@ -141,6 +153,7 @@ export function parseAcpAgentDefinitions(value: unknown): AcpAgentDefinition[] {
     }
     const record = entry as Record<string, unknown>;
     const command = record.command;
+    const listModelsCommand = record.listModelsCommand;
     if (
       command !== undefined &&
       typeof command !== "string" &&
@@ -148,6 +161,16 @@ export function parseAcpAgentDefinitions(value: unknown): AcpAgentDefinition[] {
         command.some((part) => typeof part !== "string"))
     ) {
       throw new Error("ACP agent command must be a string or string array");
+    }
+    if (
+      listModelsCommand !== undefined &&
+      typeof listModelsCommand !== "string" &&
+      (!Array.isArray(listModelsCommand) ||
+        listModelsCommand.some((part) => typeof part !== "string"))
+    ) {
+      throw new Error(
+        "ACP agent listModelsCommand must be a string or string array",
+      );
     }
     if (
       record.mcpTransport !== undefined &&
@@ -163,6 +186,9 @@ export function parseAcpAgentDefinitions(value: unknown): AcpAgentDefinition[] {
       ...(command === undefined
         ? {}
         : { command: command as string | string[] }),
+      ...(listModelsCommand === undefined
+        ? {}
+        : { listModelsCommand: listModelsCommand as string | string[] }),
       mcpTransport:
         record.mcpTransport === "http" ? ("http" as const) : ("stdio" as const),
     };
