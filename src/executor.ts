@@ -681,21 +681,6 @@ export function createAgentRuntimeExecutor(options?: {
         rememberLastGoodCatalog(lastGoodCatalogs, catalog);
         return catalog;
       }
-      if (requestedSessionId) {
-        const persisted = await readPersistedAcpModelCatalog({
-          sink,
-          payload,
-          agent,
-          sessionId: requestedSessionId,
-          createAcpx,
-          pendingApprovals,
-          permissionTimeoutMs,
-        });
-        if (persisted) {
-          rememberLastGoodCatalog(lastGoodCatalogs, persisted);
-          return persisted;
-        }
-      }
       const cached = lastGoodCatalogs.get(agent.id);
       if (!cached) {
         scheduleDisposableCatalogRefresh({
@@ -980,12 +965,6 @@ function modelCatalogFromStatus(
   };
 }
 
-function isMissingAcpSession(error: unknown): boolean {
-  return (
-    error instanceof Error && error.message.startsWith("ACP session not found:")
-  );
-}
-
 function unavailableAcpModelCatalog(agent: string): AcpModelCatalog {
   return {
     agent,
@@ -1057,27 +1036,6 @@ async function createCatalogRuntime(
       permissionTimeoutMs: options.permissionTimeoutMs,
     },
   );
-}
-
-async function readPersistedAcpModelCatalog(
-  options: CatalogRuntimeOptions & { sessionId: string },
-): Promise<AcpModelCatalog | undefined> {
-  const runtime = await createCatalogRuntime(options);
-  if (!runtime.getStatus) return undefined;
-  try {
-    return modelCatalogFromStatus(
-      options.agent.id,
-      await runtime.getStatus({
-        handle: {
-          sessionKey: options.sessionId,
-          runtimeSessionName: options.sessionId,
-        },
-      }),
-    );
-  } catch (error) {
-    if (!isMissingAcpSession(error)) throw error;
-    return undefined;
-  }
 }
 
 async function discoverDisposableAcpCatalog(

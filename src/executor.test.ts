@@ -141,64 +141,29 @@ describe("agent runtime executor ACP configuration", () => {
 });
 
 describe("agent runtime executor ACP model catalogs", () => {
-  it("reads a caller-identified persisted session without starting an agent", async () => {
+  it("does not open a runtime for a caller session that is not live", async () => {
     const fake = createRuntime(["model", "reasoning_effort"]);
-    const getStatus = vi.fn(async ({ handle }) => {
-      if (handle.sessionKey !== "persisted-session") {
-        throw new Error(`ACP session not found: ${handle.sessionKey}`);
-      }
-      return {
-        models: {
-          currentModelId: "gpt-6",
-          availableModelIds: ["gpt-6", "gpt-5.6"],
-        },
-        details: {
-          configOptions: [
-            {
-              id: "reasoning_effort",
-              name: "Thinking",
-              type: "select",
-              currentValue: "medium",
-              options: [
-                { value: "low", name: "Low" },
-                { value: "medium", name: "Medium" },
-              ],
-            },
-          ],
-        },
-      };
+    const getStatus = vi.fn(async () => {
+      throw new Error("stale session must not be probed on the request path");
     });
     fake.runtime.getStatus = getStatus;
-    const ensureSession = vi.spyOn(fake.runtime, "ensureSession");
-    const close = vi.spyOn(fake.runtime, "close");
-    const executor = createAgentRuntimeExecutor({
-      createAcpxRuntime: async () => fake.runtime,
-    });
+    const createAcpxRuntime = vi.fn(async () => fake.runtime);
+    const executor = createAgentRuntimeExecutor({ createAcpxRuntime });
 
     await expect(
       executor.listAcpModels(sink, {
         agent: "codex",
         sessionId: "persisted-session",
       }),
-    ).resolves.toMatchObject({
+    ).resolves.toEqual({
       agent: "codex",
-      currentModel: "gpt-6",
-      models: ["gpt-6", "gpt-5.6"],
-      configOptions: [
-        {
-          id: "reasoning_effort",
-          currentValue: "medium",
-        },
-      ],
+      models: [],
+      entries: [],
+      configOptions: [],
+      error: "catalog unavailable",
     });
-    expect(ensureSession).not.toHaveBeenCalled();
-    expect(close).not.toHaveBeenCalled();
-    expect(getStatus).toHaveBeenCalledWith({
-      handle: {
-        sessionKey: "persisted-session",
-        runtimeSessionName: "persisted-session",
-      },
-    });
+    expect(createAcpxRuntime).not.toHaveBeenCalled();
+    expect(getStatus).not.toHaveBeenCalled();
   });
 
   it("reads a matching live session without starting or closing another runtime", async () => {
@@ -275,7 +240,10 @@ describe("agent runtime executor ACP model catalogs", () => {
     createAcpxRuntime.mockClear();
 
     await expect(
-      executor.listAcpModels(sink, { agent: "codex" }),
+      executor.listAcpModels(sink, {
+        agent: "codex",
+        sessionId: "closed-session",
+      }),
     ).resolves.toMatchObject({
       agent: "codex",
       currentModel: "gpt-6",
