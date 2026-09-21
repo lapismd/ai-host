@@ -46,6 +46,15 @@ describe("toAcpxSessionOptions", () => {
         thinking: "high",
       }),
     ).toEqual({ model: "gpt-5.4-medium" });
+    expect(
+      toAcpxSessionOptions({
+        agent: "cursor",
+        model: {
+          provider: "cursor",
+          model: "claude-opus-5[thinking=true,effort=high]",
+        },
+      }),
+    ).toEqual({ model: "claude-opus-5" });
   });
 
   it("omits thinking when it is off", () => {

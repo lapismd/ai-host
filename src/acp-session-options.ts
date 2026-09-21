@@ -1,8 +1,79 @@
+export type AcpThinkingValue = "off" | "low" | "medium" | "high" | "xhigh";
+
+export const ACP_THINKING_VALUES = [
+  "off",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+] as const;
+
+export const ACP_THINKING_KEYS = [
+  "thinking",
+  "effort",
+  "reasoning_effort",
+] as const;
+
+export const ACP_THINKING_NAMES: Record<AcpThinkingValue, string> = {
+  off: "Off",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra High",
+};
+
 export type AcpStartSessionFields = {
+  agent?: string;
   model?: { provider?: string; model?: string };
-  thinking?: "off" | "low" | "medium" | "high";
+  thinking?: AcpThinkingValue;
   metadata?: Record<string, unknown>;
 };
+
+export function isAcpThinkingValue(value: string): value is AcpThinkingValue {
+  return (ACP_THINKING_VALUES as readonly string[]).includes(value);
+}
+
+export function parseAcpThinkingValue(
+  value: unknown,
+): AcpThinkingValue | undefined {
+  const text =
+    typeof value === "string"
+      ? value.trim().toLowerCase()
+      : undefined;
+  if (!text) return undefined;
+  if (text === "none") return "off";
+  return isAcpThinkingValue(text) ? text : undefined;
+}
+
+export function uniqueThinkingValues(
+  values: readonly (AcpThinkingValue | undefined)[],
+): AcpThinkingValue[] {
+  const unique: AcpThinkingValue[] = [];
+  for (const value of values) {
+    if (value && !unique.includes(value)) unique.push(value);
+  }
+  return unique;
+}
+
+export function stripCursorModelId(model: string): string {
+  const trimmed = model.trim();
+  const bracket = trimmed.indexOf("[");
+  return bracket >= 0 ? trimmed.slice(0, bracket) : trimmed;
+}
+
+export function advertisedCursorEffort(
+  model: string,
+): AcpThinkingValue | undefined {
+  const match = model.trim().match(/\[(.*)\]$/u);
+  if (!match) return;
+  for (const part of match[1].split(",")) {
+    const separator = part.indexOf("=");
+    if (separator <= 0) continue;
+    const key = part.slice(0, separator).trim();
+    if (key !== "effort" && key !== "reasoning") continue;
+    return parseAcpThinkingValue(part.slice(separator + 1));
+  }
+}
 
 export type AcpxSessionOptions = {
   model?: string;
@@ -13,7 +84,12 @@ export function toAcpxSessionOptions(
   payload: AcpStartSessionFields,
 ): AcpxSessionOptions {
   const options: AcpxSessionOptions = {};
-  if (payload.model?.model) options.model = payload.model.model;
+  if (payload.model?.model) {
+    options.model =
+      payload.agent === "cursor"
+        ? stripCursorModelId(payload.model.model)
+        : payload.model.model;
+  }
   const parts = [
     portableSessionBootstrap(payload.metadata),
     portableAvailableSkillsManifest(payload.metadata),

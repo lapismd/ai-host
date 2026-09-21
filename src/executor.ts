@@ -17,12 +17,23 @@ import type {
   UnsequencedAgentRuntimeEvent,
 } from "./protocol";
 import {
+  ACP_THINKING_KEYS,
+  advertisedCursorEffort,
+  stripCursorModelId,
   toAcpxSessionOptions,
-  vcsEnvironment,
   toAcpxThinkingValue,
+  vcsEnvironment,
+  type AcpThinkingValue,
   type AcpxSessionOptions,
 } from "./acp-session-options";
-import { listAcpAgentInventory } from "./acp-model-inventory";
+import {
+  listAcpAgentInventory,
+  mergeCursorAvailableModels,
+} from "./acp-model-inventory";
+import {
+  listCursorAvailableModelsViaAcp,
+  type CursorListedModel,
+} from "./cursor-model-inventory";
 import {
   catalogEntriesForAgent,
   type AcpModelEntry,
@@ -64,7 +75,7 @@ export type AcpStartPayload = {
   workspace?: string;
   agent?: string;
   model?: { provider?: string; model?: string };
-  thinking?: "off" | "low" | "medium" | "high";
+  thinking?: AcpThinkingValue;
   metadata?: Record<string, unknown>;
   mcpServers?: AcpMcpServer[];
   resumeSessionId?: string;
@@ -139,7 +150,7 @@ export type AcpConfigurationFieldResult = {
 export type AcpConfigurePayload = {
   sessionId: string;
   model?: { provider?: string; model?: string };
-  thinking?: "off" | "low" | "medium" | "high";
+  thinking?: AcpThinkingValue;
 };
 
 export type AcpConfigureResult = {
@@ -284,9 +295,15 @@ export type ListAgentInventory = (
   payload: Pick<AcpStartPayload, "workspace">,
 ) => Promise<AcpModelCatalog>;
 
+export type ListCursorAvailableModels = (input: {
+  agent: AcpAgentDefinition;
+  workspace?: string;
+}) => Promise<CursorListedModel[]>;
+
 export function createAgentRuntimeExecutor(options?: {
   createAcpxRuntime?: CreateAcpxRuntime;
   listAgentInventory?: ListAgentInventory;
+  listCursorAvailableModels?: ListCursorAvailableModels;
   agentRegistry?: AcpAgentRegistry;
   permissionTimeoutMs?: number;
   disconnectGraceMs?: number;
@@ -303,11 +320,17 @@ export function createAgentRuntimeExecutor(options?: {
   const pendingApprovals = new Map<string, PendingAcpApproval>();
   const lastGoodCatalogs = new Map<string, AcpModelCatalog>();
   const catalogRefresh = new Map<string, Promise<void>>();
+  const cursorEnrichment = new Map<string, Promise<void>>();
   const createAcpx = options?.createAcpxRuntime ?? defaultCreateAcpxRuntime;
   const listAgentInventory =
     options?.listAgentInventory ??
     ((agent, payload) =>
       listAcpAgentInventory(agent, { workspace: payload.workspace }));
+  const listCursorAvailableModels =
+    options?.listCursorAvailableModels ??
+    (options?.createAcpxRuntime
+      ? async () => []
+      : listCursorAvailableModelsViaAcp);
   const agentRegistry = options?.agentRegistry ?? createAcpAgentRegistry();
   const permissionTimeoutMs = normalizePositiveDuration(
     options?.permissionTimeoutMs,
@@ -320,6 +343,36 @@ export function createAgentRuntimeExecutor(options?: {
   const toolBridges =
     options?.toolBridgeBroker ??
     new ToolBridgeBroker(options?.toolBridgeOptions);
+
+  function finishCursorCatalog(
+    agent: AcpAgentDefinition,
+    catalog: AcpModelCatalog,
+    workspace?: string,
+  ): AcpModelCatalog {
+    if (
+      agent.id === "cursor" &&
+      catalog.models.length > 0 &&
+      !catalog.entries.some((entry) => (entry.thinkingValues?.length ?? 0) > 0) &&
+      !cursorEnrichment.has(agent.id)
+    ) {
+      const work = Promise.resolve()
+        .then(() => listCursorAvailableModels({ agent, workspace }))
+        .then((available) => {
+          if (available.length === 0) return;
+          const base = lastGoodCatalogs.get(agent.id) ?? catalog;
+          rememberLastGoodCatalog(
+            lastGoodCatalogs,
+            mergeCursorAvailableModels(base, available),
+          );
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          cursorEnrichment.delete(agent.id);
+        });
+      cursorEnrichment.set(agent.id, work);
+    }
+    return catalog;
+  }
 
   async function initializeAcpSession(
     sink: AgentHostSink,
@@ -388,11 +441,18 @@ export function createAgentRuntimeExecutor(options?: {
       agent: agent.id,
       mode: effectivePayload.restricted ? "oneshot" : "persistent",
       cwd: effectivePayload.workspace,
-      sessionOptions: toAcpxSessionOptions(effectivePayload),
+      sessionOptions: toAcpxSessionOptions({
+        ...effectivePayload,
+        agent: agent.id,
+      }),
     });
     const thinking = toAcpxThinkingValue({
       agent: agent.id,
-      thinking: effectivePayload.thinking,
+      thinking:
+        effectivePayload.thinking ??
+        (agent.id === "cursor" && effectivePayload.model?.model
+          ? advertisedCursorEffort(effectivePayload.model.model)
+          : undefined),
     });
     const thinkingKey = thinking
       ? await thinkingConfigurationKey(runtime, handle)
@@ -690,15 +750,17 @@ export function createAgentRuntimeExecutor(options?: {
           await liveSession.runtime.getStatus({ handle: liveSession.handle }),
         );
         rememberLastGoodCatalog(lastGoodCatalogs, catalog);
-        return catalog;
+        return finishCursorCatalog(agent, catalog, payload.workspace);
       }
       const cached = lastGoodCatalogs.get(agent.id);
-      if (cached) return cached;
+      if (cached) return finishCursorCatalog(agent, cached, payload.workspace);
       const pending = catalogRefresh.get(agent.id);
       if (pending) {
         await pending;
-        return (
-          lastGoodCatalogs.get(agent.id) ?? unavailableAcpModelCatalog(agent.id)
+        return finishCursorCatalog(
+          agent,
+          lastGoodCatalogs.get(agent.id) ?? unavailableAcpModelCatalog(agent.id),
+          payload.workspace,
         );
       }
       const work = Promise.resolve()
@@ -716,8 +778,10 @@ export function createAgentRuntimeExecutor(options?: {
         });
       catalogRefresh.set(agent.id, work);
       await work;
-      return (
-        lastGoodCatalogs.get(agent.id) ?? unavailableAcpModelCatalog(agent.id)
+      return finishCursorCatalog(
+        agent,
+        lastGoodCatalogs.get(agent.id) ?? unavailableAcpModelCatalog(agent.id),
+        payload.workspace,
       );
     },
 
@@ -806,11 +870,15 @@ export function createAgentRuntimeExecutor(options?: {
 
       const requestedModel = payload.model?.model?.trim();
       if (requestedModel) {
+        const appliedModel =
+          session.agentId === "cursor"
+            ? stripCursorModelId(requestedModel)
+            : requestedModel;
         const currentModel = runtime.getStatus
           ? (await runtime.getStatus({ handle: session.handle })).models
               ?.currentModelId
           : undefined;
-        if (currentModel === requestedModel) {
+        if (currentModel === appliedModel || currentModel === requestedModel) {
           result.model = { status: "unchanged" };
         } else if (!keys.includes("model") || !runtime.setConfigOption) {
           result.model = {
@@ -822,13 +890,14 @@ export function createAgentRuntimeExecutor(options?: {
             await runtime.setConfigOption({
               handle: session.handle,
               key: "model",
-              value: requestedModel,
+              value: appliedModel,
             });
             const effectiveModel = runtime.getStatus
               ? (await runtime.getStatus({ handle: session.handle })).models
                   ?.currentModelId
               : undefined;
             result.model =
+              effectiveModel === appliedModel ||
               effectiveModel === requestedModel
                 ? { status: "applied" }
                 : {
@@ -845,10 +914,13 @@ export function createAgentRuntimeExecutor(options?: {
         }
       }
 
-      if (payload.thinking) {
-        const thinkingKey = ["thinking", "effort", "reasoning_effort"].find(
-          (key) => keys.includes(key),
-        );
+      const thinking =
+        payload.thinking ??
+        (session.agentId === "cursor" && requestedModel
+          ? advertisedCursorEffort(requestedModel)
+          : undefined);
+      if (thinking) {
+        const thinkingKey = ACP_THINKING_KEYS.find((key) => keys.includes(key));
         if (!thinkingKey || !runtime.setConfigOption) {
           result.thinking = {
             status: "unsupported",
@@ -861,7 +933,8 @@ export function createAgentRuntimeExecutor(options?: {
               handle: session.handle,
               key: thinkingKey,
               value: toAcpxThinkingValue({
-                thinking: payload.thinking,
+                agent: session.agentId,
+                thinking,
               })!,
             });
             result.thinking = { status: "applied" };
@@ -1181,9 +1254,7 @@ async function thinkingConfigurationKey(
   if (!runtime.getCapabilities) return "thinking";
   const capabilities = await runtime.getCapabilities({ handle });
   const keys = capabilities.configOptionKeys ?? [];
-  return ["thinking", "effort", "reasoning_effort"].find((key) =>
-    keys.includes(key),
-  );
+  return ACP_THINKING_KEYS.find((key) => keys.includes(key));
 }
 
 export async function defaultCreateAcpxRuntime(

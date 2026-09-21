@@ -4,11 +4,16 @@ import {
   type StartInventoryProcess,
 } from "./inventory-process";
 
+import {
+  parseAcpThinkingValue,
+  type AcpThinkingValue,
+} from "./acp-session-options";
+
 export type CodexListedModel = {
   id: string;
   label: string;
   default?: boolean;
-  thinkingValues?: Array<"off" | "low" | "medium" | "high">;
+  thinkingValues?: AcpThinkingValue[];
 };
 
 type AppServerMessage = {
@@ -97,19 +102,11 @@ export async function listCodexAppServerModels(input: {
   }
 }
 
-function thinkingFromCodex(
-  value: unknown,
-): Array<"off" | "low" | "medium" | "high"> | undefined {
+function thinkingFromCodex(value: unknown): AcpThinkingValue[] | undefined {
   if (!Array.isArray(value)) return;
-  const thinking: Array<"off" | "low" | "medium" | "high"> = [];
+  const thinking: AcpThinkingValue[] = [];
   for (const entry of value) {
-    const effort = text(asRecord(entry).reasoningEffort);
-    const mapped =
-      effort === "none"
-        ? "off"
-        : effort === "low" || effort === "medium" || effort === "high"
-          ? effort
-          : undefined;
+    const mapped = parseAcpThinkingValue(asRecord(entry).reasoningEffort);
     if (mapped && !thinking.includes(mapped)) thinking.push(mapped);
   }
   return thinking.length > 0 ? thinking : undefined;

@@ -3,6 +3,7 @@ import { createAcpAgentRegistry } from "./acp-agent";
 import {
   catalogFromListedModels,
   listAcpAgentInventory,
+  mergeCursorAvailableModels,
   resolveAcpModelInventory,
 } from "./acp-model-inventory";
 
@@ -53,6 +54,39 @@ describe("ACP model inventory", () => {
           options: [
             { value: "auto", name: "Auto" },
             { value: "composer-2.5", name: "Composer 2.5" },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("attaches advertised thinkingValues only to the models that listed them", () => {
+    expect(
+      catalogFromListedModels("codex", [
+        {
+          id: "gpt-5.6-sol",
+          label: "Sol",
+          thinkingValues: ["low", "off"],
+        },
+        { id: "gpt-5.6-terra", label: "Terra" },
+      ]),
+    ).toMatchObject({
+      entries: [
+        {
+          id: "gpt-5.6-sol",
+          label: "Sol",
+          thinkingValues: ["low", "off"],
+        },
+        { id: "gpt-5.6-terra", label: "Terra" },
+      ],
+      configOptions: [
+        { id: "model" },
+        {
+          id: "thinking",
+          category: "thinking",
+          options: [
+            { value: "low", name: "Low" },
+            { value: "off", name: "Off" },
           ],
         },
       ],
@@ -144,6 +178,45 @@ describe("ACP model inventory", () => {
         badges: ["High"],
       },
       { id: "composer-2.5", label: "Composer 2.5" },
+    ]);
+  });
+
+  it("merges background Cursor thinkingValues onto matching catalog entries", () => {
+    const catalog = catalogFromListedModels("cursor", [
+      { id: "composer-2.5", label: "Composer 2.5" },
+      {
+        id: "claude-opus-5[effort=high]",
+        label: "claude-opus-5",
+      },
+    ]);
+    const enriched = mergeCursorAvailableModels(catalog, [
+      {
+        id: "composer-2.5",
+        label: "Composer 2.5",
+        thinkingValues: ["low", "high"],
+      },
+      {
+        id: "claude-opus-5",
+        label: "claude-opus-5",
+        thinkingValues: ["xhigh"],
+      },
+    ]);
+    expect(enriched.entries).toEqual([
+      {
+        id: "composer-2.5",
+        label: "Composer 2.5",
+        thinkingValues: ["low", "high"],
+      },
+      {
+        id: "claude-opus-5[effort=high]",
+        label: "claude-opus-5",
+        badges: ["High"],
+        thinkingValues: ["xhigh"],
+      },
+    ]);
+    expect(enriched.configOptions.map((option) => option.id)).toEqual([
+      "model",
+      "thinking",
     ]);
   });
 });

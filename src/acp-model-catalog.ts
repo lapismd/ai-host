@@ -1,10 +1,17 @@
+import {
+  ACP_THINKING_NAMES,
+  type AcpThinkingValue,
+} from "./acp-session-options";
+
 export type AcpModelEntry = {
   id: string;
   label: string;
   badges?: string[];
+  thinkingValues?: AcpThinkingValue[];
 };
 
 const EFFORT_BADGES: Record<string, string> = {
+  ...ACP_THINKING_NAMES,
   low: "Low",
   medium: "Medium",
   high: "High",
@@ -45,8 +52,13 @@ export function normalizeAcpModelEntry(
   agent: string,
   id: string,
   displayName?: string,
+  thinkingValues?: readonly AcpThinkingValue[],
 ): AcpModelEntry {
   const trimmed = id.trim();
+  const advertised =
+    thinkingValues && thinkingValues.length > 0
+      ? [...new Set(thinkingValues)]
+      : undefined;
   if (agent === "cursor") {
     const parsed = parseBracketAttributes(trimmed);
     const badges = badgesFromAttributes(parsed.attrs);
@@ -55,11 +67,13 @@ export function normalizeAcpModelEntry(
       id: trimmed,
       label: /\[/u.test(trimmed) ? parsed.label : named || parsed.label,
       ...(badges.length > 0 ? { badges } : {}),
+      ...(advertised ? { thinkingValues: advertised } : {}),
     };
   }
   return {
     id: trimmed,
     label: displayName?.trim() || trimmed,
+    ...(advertised ? { thinkingValues: advertised } : {}),
   };
 }
 

@@ -3,8 +3,16 @@ import {
   type AcpAgentDefinition,
 } from "./acp-agent";
 import { normalizeAcpModelEntry } from "./acp-model-catalog";
+import {
+  ACP_THINKING_NAMES,
+  stripCursorModelId,
+  type AcpThinkingValue,
+} from "./acp-session-options";
 import { listCodexAppServerModels } from "./codex-model-inventory";
-import { parseCursorListModelsOutput } from "./cursor-model-inventory";
+import {
+  parseCursorListModelsOutput,
+  type CursorListedModel,
+} from "./cursor-model-inventory";
 import type { AcpConfigOption, AcpModelCatalog } from "./executor";
 import {
   commandArgv,
@@ -22,7 +30,7 @@ export type ListedInventoryModel = {
   label?: string;
   current?: boolean;
   default?: boolean;
-  thinkingValues?: Array<"off" | "low" | "medium" | "high">;
+  thinkingValues?: AcpThinkingValue[];
 };
 
 const DEFAULT_CODEX_INVENTORY = ["codex", "app-server", "--stdio"];
@@ -67,7 +75,7 @@ export function catalogFromListedModels(
     agent,
     models: unique.map((model) => model.id),
     entries: unique.map((model) =>
-      normalizeAcpModelEntry(agent, model.id, model.label),
+      normalizeAcpModelEntry(agent, model.id, model.label, model.thinkingValues),
     ),
     configOptions: [
       ...(unique.length > 0
@@ -151,17 +159,46 @@ function modelConfigOption(
   };
 }
 
-function thinkingConfigOption(
-  values: Array<"off" | "low" | "medium" | "high">,
-): AcpConfigOption {
-  const names = { off: "Off", low: "Low", medium: "Medium", high: "High" };
+export function mergeCursorAvailableModels(
+  catalog: AcpModelCatalog,
+  available: readonly CursorListedModel[],
+): AcpModelCatalog {
+  if (available.length === 0) return catalog;
+  const byKey = new Map(
+    available.map((model) => [stripCursorModelId(model.id).toLowerCase(), model]),
+  );
+  const entries = catalog.entries.map((entry) => {
+    const match = byKey.get(stripCursorModelId(entry.id).toLowerCase());
+    if (!match?.thinkingValues?.length) return entry;
+    return { ...entry, thinkingValues: [...match.thinkingValues] };
+  });
+  const thinkingValues = [
+    ...new Set(entries.flatMap((entry) => entry.thinkingValues ?? [])),
+  ];
+  const configOptions = catalog.configOptions.filter(
+    (option) => option.id !== "thinking" && option.category !== "thinking",
+  );
+  if (thinkingValues.length > 0) {
+    configOptions.push(thinkingConfigOption(thinkingValues));
+  }
+  return {
+    ...catalog,
+    entries,
+    configOptions,
+  };
+}
+
+function thinkingConfigOption(values: AcpThinkingValue[]): AcpConfigOption {
   return {
     id: "thinking",
     name: "Thinking",
     category: "thinking",
     type: "select",
     currentValue: values.includes("medium") ? "medium" : values[0]!,
-    options: values.map((value) => ({ value, name: names[value] })),
+    options: values.map((value) => ({
+      value,
+      name: ACP_THINKING_NAMES[value],
+    })),
   };
 }
 

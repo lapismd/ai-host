@@ -389,6 +389,100 @@ describe("agent runtime executor ACP model catalogs", () => {
     });
     expect(createAcpxRuntime).not.toHaveBeenCalled();
   });
+
+  it("returns a Cursor --list-models catalog before background enrichment", async () => {
+    let resolveAvailable!: (
+      models: Array<{
+        id: string;
+        label: string;
+        thinkingValues?: Array<"off" | "low" | "medium" | "high" | "xhigh">;
+      }>,
+    ) => void;
+    const available = new Promise<
+      Array<{
+        id: string;
+        label: string;
+        thinkingValues?: Array<"off" | "low" | "medium" | "high" | "xhigh">;
+      }>
+    >((resolve) => {
+      resolveAvailable = resolve;
+    });
+    const fake = createRuntime(["model"]);
+    const createAcpxRuntime = vi.fn(async () => fake.runtime);
+    const executor = createAgentRuntimeExecutor({
+      createAcpxRuntime,
+      listAgentInventory: async () =>
+        inventoryCatalog("cursor", ["composer-2.5"], {
+          currentModel: "composer-2.5",
+        }),
+      listCursorAvailableModels: vi.fn(async () => available),
+    });
+
+    const first = await executor.listAcpModels(sink, { agent: "cursor" });
+    expect(first.entries).toEqual([
+      { id: "composer-2.5", label: "composer-2.5" },
+    ]);
+    expect(first.configOptions).toEqual([]);
+    expect(createAcpxRuntime).not.toHaveBeenCalled();
+
+    resolveAvailable([
+      {
+        id: "composer-2.5",
+        label: "Composer 2.5",
+        thinkingValues: ["low", "high"],
+      },
+    ]);
+    await vi.waitFor(async () => {
+      const next = await executor.listAcpModels(sink, { agent: "cursor" });
+      expect(next.entries[0]?.thinkingValues).toEqual(["low", "high"]);
+      expect(next.configOptions.map((option) => option.id)).toContain(
+        "thinking",
+      );
+    });
+    expect(createAcpxRuntime).not.toHaveBeenCalled();
+    await executor.close();
+  });
+});
+
+describe("agent runtime executor Cursor apply", () => {
+  it("strips Cursor brackets and sets advertised effort", async () => {
+    let currentModel = "composer-2.5";
+    const fake = createRuntime(["model", "effort"]);
+    fake.runtime.getStatus = async () => ({
+      models: { currentModelId: currentModel },
+    });
+    fake.runtime.setConfigOption = vi.fn(async ({ key, value }) => {
+      if (key === "model") currentModel = value;
+    });
+    const executor = createAgentRuntimeExecutor({
+      createAcpxRuntime: async () => fake.runtime,
+    });
+    const { sessionId } = await executor.startAcpSession(sink, {
+      agent: "cursor",
+      model: { model: "composer-2.5" },
+    });
+
+    await expect(
+      executor.configureAcpSession({
+        sessionId,
+        model: { model: "claude-opus-5[thinking=true,effort=high]" },
+      }),
+    ).resolves.toEqual({
+      model: { status: "applied" },
+      thinking: { status: "applied" },
+    });
+    expect(fake.runtime.setConfigOption).toHaveBeenCalledWith({
+      handle: expect.any(Object),
+      key: "model",
+      value: "claude-opus-5",
+    });
+    expect(fake.runtime.setConfigOption).toHaveBeenCalledWith({
+      handle: expect.any(Object),
+      key: "effort",
+      value: "high",
+    });
+    await executor.closeAcpSession(sessionId);
+  });
 });
 
 describe("agent runtime executor sequencing", () => {
