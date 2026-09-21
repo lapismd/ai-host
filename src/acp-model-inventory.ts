@@ -13,6 +13,7 @@ import {
   parseCursorListModelsOutput,
   type CursorListedModel,
 } from "./cursor-model-inventory";
+import { listOpenCodeServerModels } from "./opencode-model-inventory";
 import type { AcpConfigOption, AcpModelCatalog } from "./executor";
 import {
   commandArgv,
@@ -23,7 +24,8 @@ import {
 
 export type AcpModelInventory =
   | { kind: "cli"; command: string[] }
-  | { kind: "codex-app-server"; command: string[] };
+  | { kind: "codex-app-server"; command: string[] }
+  | { kind: "opencode-server"; command: string[] };
 
 export type ListedInventoryModel = {
   id: string;
@@ -34,6 +36,14 @@ export type ListedInventoryModel = {
 };
 
 const DEFAULT_CODEX_INVENTORY = ["codex", "app-server", "--stdio"];
+const DEFAULT_OPENCODE_INVENTORY = [
+  "opencode",
+  "serve",
+  "--hostname",
+  "127.0.0.1",
+  "--port",
+  "0",
+];
 
 export async function resolveAcpModelInventory(
   agent: AcpAgentDefinition,
@@ -49,6 +59,9 @@ export async function resolveAcpModelInventory(
       kind: "cli",
       command: cursorListModelsArgv(await resolveAcpAgentCommand(agent)),
     };
+  }
+  if (agent.id === "opencode") {
+    return { kind: "opencode-server", command: [...DEFAULT_OPENCODE_INVENTORY] };
   }
   return undefined;
 }
@@ -94,6 +107,7 @@ export async function listAcpAgentInventory(
     timeoutMs?: number;
     runCommand?: RunInventoryCommand;
     startProcess?: StartInventoryProcess;
+    fetchJson?: (url: string) => Promise<unknown>;
     resolveInventory?: (
       agent: AcpAgentDefinition,
     ) => Promise<AcpModelInventory | undefined>;
@@ -111,6 +125,16 @@ export async function listAcpAgentInventory(
       cwd: options.workspace,
       timeoutMs: options.timeoutMs,
       startProcess: options.startProcess,
+    });
+    return catalogFromListedModels(agent.id, models);
+  }
+  if (inventory.kind === "opencode-server") {
+    const models = await listOpenCodeServerModels({
+      command: inventory.command,
+      cwd: options.workspace,
+      timeoutMs: options.timeoutMs,
+      startProcess: options.startProcess,
+      fetchJson: options.fetchJson,
     });
     return catalogFromListedModels(agent.id, models);
   }
@@ -132,6 +156,9 @@ function inventoryForCommand(
   const argv = commandArgv(command);
   if (agentId === "codex" && !argv.includes("--list-models")) {
     return { kind: "codex-app-server", command: argv };
+  }
+  if (agentId === "opencode" && !argv.includes("--list-models")) {
+    return { kind: "opencode-server", command: argv };
   }
   return { kind: "cli", command: argv };
 }

@@ -71,6 +71,25 @@ describe("agent runtime executor ACP thinking", () => {
     await executor.closeAcpSession(result.sessionId);
   });
 
+  it("applies thinking when the session advertises variant", async () => {
+    const fake = createRuntime(["mode", "model", "variant"]);
+    const executor = createAgentRuntimeExecutor({
+      createAcpxRuntime: async () => fake.runtime,
+    });
+
+    const result = await executor.startAcpSession(sink, {
+      agent: "opencode",
+      thinking: "xhigh",
+    });
+
+    expect(fake.setConfigOption).toHaveBeenCalledWith({
+      handle: expect.any(Object),
+      key: "variant",
+      value: "xhigh",
+    });
+    await executor.closeAcpSession(result.sessionId);
+  });
+
   it("applies thinking when the session advertises effort", async () => {
     const fake = createRuntime(["mode", "model", "effort"]);
     const executor = createAgentRuntimeExecutor({

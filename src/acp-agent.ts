@@ -29,6 +29,12 @@ export const DEFAULT_ACP_AGENTS: readonly AcpAgentDefinition[] = [
     enabled: true,
     mcpTransport: "http",
   },
+  {
+    id: "opencode",
+    label: "OpenCode",
+    enabled: true,
+    mcpTransport: "stdio",
+  },
 ];
 
 export function createAcpAgentRegistry(

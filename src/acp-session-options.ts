@@ -12,6 +12,7 @@ export const ACP_THINKING_KEYS = [
   "thinking",
   "effort",
   "reasoning_effort",
+  "variant",
 ] as const;
 
 export const ACP_THINKING_NAMES: Record<AcpThinkingValue, string> = {

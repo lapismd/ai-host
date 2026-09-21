@@ -14,6 +14,11 @@ describe("ACP agent registry", () => {
       id: "cursor",
       mcpTransport: "http",
     });
+    expect(resolveAcpAgent({ agent: "opencode" }, registry)).toMatchObject({
+      id: "opencode",
+      label: "OpenCode",
+      mcpTransport: "stdio",
+    });
   });
 
   it("accepts custom commands without exposing disabled definitions", () => {
