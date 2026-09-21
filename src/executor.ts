@@ -874,6 +874,7 @@ export function createAgentRuntimeExecutor(options?: {
           session.agentId === "cursor"
             ? stripCursorModelId(requestedModel)
             : requestedModel;
+        const cursorAuto = isCursorAutoModel(session.agentId ?? "", requestedModel);
         const currentModel = runtime.getStatus
           ? (await runtime.getStatus({ handle: session.handle })).models
               ?.currentModelId
@@ -881,10 +882,12 @@ export function createAgentRuntimeExecutor(options?: {
         if (currentModel === appliedModel || currentModel === requestedModel) {
           result.model = { status: "unchanged" };
         } else if (!keys.includes("model") || !runtime.setConfigOption) {
-          result.model = {
-            status: "unsupported",
-            reason: "The ACP session does not advertise model configuration.",
-          };
+          result.model = cursorAuto
+            ? { status: "unchanged" }
+            : {
+                status: "unsupported",
+                reason: "The ACP session does not advertise model configuration.",
+              };
         } else {
           try {
             await runtime.setConfigOption({
@@ -898,7 +901,8 @@ export function createAgentRuntimeExecutor(options?: {
               : undefined;
             result.model =
               effectiveModel === appliedModel ||
-              effectiveModel === requestedModel
+              effectiveModel === requestedModel ||
+              cursorAuto
                 ? { status: "applied" }
                 : {
                     status: "unsupported",
@@ -906,10 +910,12 @@ export function createAgentRuntimeExecutor(options?: {
                       "The ACP session did not verify the requested model.",
                   };
           } catch (error) {
-            result.model = {
-              status: "unsupported",
-              reason: error instanceof Error ? error.message : String(error),
-            };
+            result.model = cursorAuto
+              ? { status: "unchanged" }
+              : {
+                  status: "unsupported",
+                  reason: error instanceof Error ? error.message : String(error),
+                };
           }
         }
       }
@@ -1607,4 +1613,8 @@ function normalizePositiveDuration(
   fallback: number,
 ): number {
   return Number.isFinite(value) && value! > 0 ? Math.floor(value!) : fallback;
+}
+
+function isCursorAutoModel(agentId: string, model: string): boolean {
+  return agentId === "cursor" && stripCursorModelId(model).toLowerCase() === "auto";
 }

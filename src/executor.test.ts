@@ -502,6 +502,65 @@ describe("agent runtime executor Cursor apply", () => {
     });
     await executor.closeAcpSession(sessionId);
   });
+
+  it("keeps Cursor Auto usable when the provider resolves a concrete model", async () => {
+    let currentModel = "composer-2.5";
+    const fake = createRuntime(["model"]);
+    fake.runtime.getStatus = async () => ({
+      models: { currentModelId: currentModel },
+    });
+    fake.runtime.setConfigOption = vi.fn(async ({ key, value }) => {
+      if (key === "model") currentModel = value === "auto" ? "composer-2.5" : value;
+    });
+    const executor = createAgentRuntimeExecutor({
+      createAcpxRuntime: async () => fake.runtime,
+    });
+    const { sessionId } = await executor.startAcpSession(sink, {
+      agent: "cursor",
+    });
+
+    await expect(
+      executor.configureAcpSession({
+        sessionId,
+        model: { model: "auto" },
+      }),
+    ).resolves.toEqual({
+      model: { status: "applied" },
+    });
+    expect(fake.runtime.setConfigOption).toHaveBeenCalledWith({
+      handle: expect.any(Object),
+      key: "model",
+      value: "auto",
+    });
+    await executor.closeAcpSession(sessionId);
+  });
+
+  it("keeps Cursor Auto unchanged when the session omits model configuration", async () => {
+    const fake = createRuntime([]);
+    fake.runtime.getStatus = async () => ({
+      models: { currentModelId: "composer-2.5" },
+    });
+    const executor = createAgentRuntimeExecutor({
+      createAcpxRuntime: async () => fake.runtime,
+    });
+    const { sessionId } = await executor.startAcpSession(sink, {
+      agent: "cursor",
+    });
+
+    await expect(
+      executor.configureAcpSession({
+        sessionId,
+        model: { model: "auto" },
+      }),
+    ).resolves.toEqual({
+      model: { status: "unchanged" },
+    });
+    expect(fake.runtime.setConfigOption).not.toHaveBeenCalled();
+    await expect(
+      executor.promptAcpSession(sink, sessionId, "still usable"),
+    ).resolves.toHaveProperty("runId");
+    await executor.closeAcpSession(sessionId);
+  });
 });
 
 describe("agent runtime executor sequencing", () => {
