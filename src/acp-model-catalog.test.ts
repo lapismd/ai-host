@@ -26,6 +26,16 @@ describe("ACP model catalog labels", () => {
       id: "composer-2.5",
       label: "Composer 2.5",
     });
+    expect(
+      normalizeAcpModelEntry(
+        "cursor",
+        "claude-opus-5[thinking=true,effort=high]",
+      ),
+    ).toEqual({
+      id: "claude-opus-5[thinking=true,effort=high]",
+      label: "claude-opus-5",
+      badges: ["High"],
+    });
   });
 
   it("uses the Codex id as the label unless a display name is provided", () => {

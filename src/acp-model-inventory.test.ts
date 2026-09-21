@@ -59,6 +59,28 @@ describe("ACP model inventory", () => {
     });
   });
 
+  it("does not invent thinking when listed models omit thinkingValues", () => {
+    const catalog = catalogFromListedModels("cursor", [
+      {
+        id: "claude-opus-5[thinking=true,context=300k,effort=high,fast=false]",
+        label: "claude-opus-5",
+      },
+      { id: "composer-2.5", label: "Composer 2.5" },
+    ]);
+    expect(catalog.configOptions.map((option) => option.id)).toEqual(["model"]);
+    expect(
+      catalog.configOptions.some((option) => option.category === "thinking"),
+    ).toBe(false);
+    expect(catalog.entries).toEqual([
+      {
+        id: "claude-opus-5[thinking=true,context=300k,effort=high,fast=false]",
+        label: "claude-opus-5",
+        badges: ["High"],
+      },
+      { id: "composer-2.5", label: "Composer 2.5" },
+    ]);
+  });
+
   it("runs the Cursor CLI inventory without starting ACP", async () => {
     const runCommand = vi.fn(async () => ({
       code: 0,
@@ -85,5 +107,43 @@ describe("ACP model inventory", () => {
       ["cursor-agent", "--list-models"],
       expect.objectContaining({}),
     );
+  });
+
+  it("keeps Cursor --list-models catalogs free of invented thinking options", async () => {
+    const catalog = await listAcpAgentInventory(
+      {
+        id: "cursor",
+        label: "Cursor",
+        enabled: true,
+        command: ["cursor-agent", "acp"],
+        mcpTransport: "http",
+      },
+      {
+        runCommand: async () => ({
+          code: 0,
+          stdout: [
+            "auto - Auto (default)",
+            "claude-opus-5[thinking=true,effort=high] - Opus High",
+            "composer-2.5 - Composer 2.5 (current)",
+          ].join("\n"),
+          stderr: "",
+        }),
+      },
+    );
+    expect(catalog.models).toEqual([
+      "auto",
+      "claude-opus-5[thinking=true,effort=high]",
+      "composer-2.5",
+    ]);
+    expect(catalog.configOptions.map((option) => option.id)).toEqual(["model"]);
+    expect(catalog.entries).toEqual([
+      { id: "auto", label: "Auto" },
+      {
+        id: "claude-opus-5[thinking=true,effort=high]",
+        label: "claude-opus-5",
+        badges: ["High"],
+      },
+      { id: "composer-2.5", label: "Composer 2.5" },
+    ]);
   });
 });
