@@ -17,8 +17,7 @@ MUST update the mapped chapter in the same Jujutsu change.
 
 | Protected area                                                                                                                                            | Required chapter     |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| `src/serve.ts`, `src/parse-cli.ts`, `src/cli.ts`, `src/token.ts`, `src/ws/serve.ts`, `src/ws/token.ts`                                                     | `protocol.md`        |
-| `src/ws-server.ts`, `src/ws/ws-server.ts`, `src/protocol.ts`, `src/protocol/`, `src/replay-buffer.ts`, `src/client.ts`                                     | `protocol.md`        |
+| `src/serve.ts`, `src/parse-cli.ts`, `src/cli.ts`, `src/token.ts`, `src/ws-server.ts`, `src/ws/`, `src/protocol.ts`, `src/protocol/`, `src/replay-buffer.ts`, `src/client.ts` | `protocol.md`        |
 | `src/executor.ts`, `src/executor/`, `src/acp-agent.ts`, `src/acp/`, `src/acp-session-options.ts`, `src/acp-model-catalog.ts`, `src/acp-model-inventory.ts`, `src/inventory/`, `src/cursor-model-inventory.ts`, `src/codex-model-inventory.ts`, `src/opencode-model-inventory.ts`, `src/inventory-process.ts` | `executor.md`        |
 | `src/mcp-shim.ts`, `src/mcp-shim-cli.ts`, `src/tool-bridge.ts`, `src/mcp/`                                                                               | `executor.md`        |
 | `src/file-tools/`                                                                                                                                         | `file-tools.md`      |

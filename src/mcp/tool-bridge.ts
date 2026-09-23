@@ -1,112 +1,49 @@
-import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
+import { createServer, type Server } from "node:http";
+import { WebSocketServer } from "ws";
 import {
-  createServer,
-  type IncomingMessage,
-  type Server,
-  type ServerResponse,
-} from "node:http";
-import { existsSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { Server as McpServer } from "@modelcontextprotocol/sdk/server/index.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+  jsonBytes,
+  sanitizeDescriptors,
+  sendJson,
+} from "./tool-bridge-framing";
 import {
-  type CallToolRequest,
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
-import { WebSocketServer, type WebSocket } from "ws";
+  handleExternalWebRequest,
+  handleLoopbackMcpHttp,
+} from "./tool-bridge-http";
+import {
+  bindToolBridgeSocket,
+  closeBridgeRecord,
+  invokeLocalTool,
+} from "./tool-bridge-session";
+import {
+  normalizeExternalHttpBaseUrl,
+  normalizeShimCommand,
+  resolveDefaultShimPath,
+  validateListenPort,
+} from "./tool-bridge-shim";
+import {
+  MAX_RESULT_BYTES,
+  type BridgeRecord,
+  type ToolBridgeBrokerOptions,
+  type ToolBridgeHttpContribution,
+  type ToolBridgeOpenPayload,
+  type ToolBridgeResponse,
+  type ToolBridgeServerContribution,
+  type ToolBridgeSink,
+} from "./tool-bridge-types";
 
-const MAX_PENDING_CALLS = 128;
-const MAX_CALL_BYTES = 128 * 1024;
-const MAX_RESULT_BYTES = 256 * 1024;
-
-export type ToolBridgeDescriptor = {
-  name: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
-  outputSchema?: Record<string, unknown>;
-  effect: "read" | "write" | "external";
-};
-
-export type ToolBridgeOpenPayload = {
-  bindingId: string;
-  conversationId: string;
-  descriptors: ToolBridgeDescriptor[];
-};
-
-export type ToolBridgeCall = {
-  bridgeId: string;
-  bindingId: string;
-  callId: string;
-  name: string;
-  input: unknown;
-};
-
-export type ToolBridgeCancel = Pick<
+export type {
+  ToolBridgeBrokerOptions,
   ToolBridgeCall,
-  "bridgeId" | "bindingId" | "callId"
->;
-
-export type ToolBridgeResponse = {
-  bridgeId: string;
-  callId: string;
-  result?: unknown;
-  error?: { code: string; message: string };
-};
-
-export type ToolBridgeSink = {
-  connectionId: string;
-  sendToolCall(call: ToolBridgeCall): void;
-  sendToolCancel(cancel: ToolBridgeCancel): void;
-};
-
-export type ToolBridgeServerContribution = {
-  name: "lapis-tools";
-  command: string;
-  args: string[];
-  env: Record<string, string>;
-};
-
-export type ToolBridgeHttpContribution = {
-  type: "http";
-  name: "lapis-tools";
-  url: string;
-  headers: Array<{ name: string; value: string }>;
-};
-
-type PendingCall =
-  | { kind: "socket"; socket: WebSocket }
-  | {
-      kind: "local";
-      resolve(value: {
-        result?: unknown;
-        error?: { code: string; message: string };
-      }): void;
-    };
-
-type BridgeRecord = {
-  id: string;
-  token: string;
-  bindingId: string;
-  conversationId: string;
-  connectionId: string;
-  descriptors: ToolBridgeDescriptor[];
-  sink: ToolBridgeSink;
-  sockets: Set<WebSocket>;
-  pending: Map<string, PendingCall>;
-};
-
-export type ToolBridgeBrokerOptions = {
-  shimPath?: string;
-  nodeCommand?: string;
-  shimArgsPrefix?: string[];
-  shimCommand?: { command: string; args: string[] };
-  extraEnv?: Record<string, string>;
-  listenPort?: number;
-  externalHttpBaseUrl?: string;
-};
+  ToolBridgeCancel,
+  ToolBridgeDescriptor,
+  ToolBridgeHttpContribution,
+  ToolBridgeOpenPayload,
+  ToolBridgeResponse,
+  ToolBridgeServerContribution,
+  ToolBridgeSink,
+} from "./tool-bridge-types";
+export { resolveDefaultShimPath } from "./tool-bridge-shim";
 
 export class ToolBridgeBroker {
   readonly #bridges = new Map<string, BridgeRecord>();
@@ -200,34 +137,12 @@ export class ToolBridgeBroker {
 
   async handleWebRequest(request: Request): Promise<Response | undefined> {
     if (!this.#externalHttpBaseUrl) return undefined;
-    const requestUrl = new URL(request.url);
-    const routePrefix = `${this.#externalHttpBaseUrl.pathname}mcp/`;
-    if (!requestUrl.pathname.startsWith(routePrefix)) return undefined;
-    const bridgeId = requestUrl.pathname.slice(routePrefix.length);
-    if (!bridgeId || bridgeId.includes("/"))
-      return new Response(null, { status: 404 });
-    const token = bearerToken(
-      request.headers.get("authorization") ?? undefined,
+    return handleExternalWebRequest(
+      request,
+      this.#externalHttpBaseUrl,
+      this.#bridges,
+      invokeLocalTool,
     );
-    const bridge = this.#bridges.get(bridgeId);
-    if (!bridge || !token || !tokensEqual(bridge.token, token)) {
-      return new Response(null, { status: 401 });
-    }
-    const server = createLapisMcpServer(
-      bridge.descriptors,
-      (name, input, signal) => this.#invokeLocal(bridge, name, input, signal),
-    );
-    const transport = new WebStandardStreamableHTTPServerTransport({
-      sessionIdGenerator: undefined,
-      enableJsonResponse: true,
-    });
-    await server.connect(transport);
-    try {
-      return await transport.handleRequest(request);
-    } finally {
-      await transport.close().catch(() => undefined);
-      await server.close().catch(() => undefined);
-    }
   }
 
   respond(connectionId: string, response: ToolBridgeResponse): void {
@@ -268,17 +183,21 @@ export class ToolBridgeBroker {
     if (bridge.connectionId !== connectionId) {
       throw new Error("Unknown app tool bridge");
     }
-    this.#closeRecord(bridge);
+    closeBridgeRecord(this.#bridges, bridge);
   }
 
   closeConnection(connectionId: string): void {
     for (const bridge of [...this.#bridges.values()]) {
-      if (bridge.connectionId === connectionId) this.#closeRecord(bridge);
+      if (bridge.connectionId === connectionId) {
+        closeBridgeRecord(this.#bridges, bridge);
+      }
     }
   }
 
   async close(): Promise<void> {
-    for (const bridge of [...this.#bridges.values()]) this.#closeRecord(bridge);
+    for (const bridge of [...this.#bridges.values()]) {
+      closeBridgeRecord(this.#bridges, bridge);
+    }
     const wss = this.#wss;
     const http = this.#http;
     this.#wss = null;
@@ -300,12 +219,14 @@ export class ToolBridgeBroker {
   async #ensureListening(): Promise<void> {
     if (this.#listeningPromise) return this.#listeningPromise;
     const http = createServer((req, res) => {
-      void this.#handleMcpHttp(req, res);
+      void handleLoopbackMcpHttp(req, res, this.#bridges, invokeLocalTool);
     });
     const wss = new WebSocketServer({ server: http });
     this.#http = http;
     this.#wss = wss;
-    wss.on("connection", (socket) => this.#bindSocket(socket));
+    wss.on("connection", (socket) =>
+      bindToolBridgeSocket(socket, this.#bridges),
+    );
     this.#listeningPromise = new Promise<void>((resolve, reject) => {
       http.once("listening", () => {
         const address = http.address();
@@ -329,104 +250,6 @@ export class ToolBridgeBroker {
     }
   }
 
-  #bindSocket(socket: WebSocket): void {
-    let bridge: BridgeRecord | undefined;
-    const helloTimer = setTimeout(() => {
-      socket.close(4401, "tool bridge authentication timed out");
-    }, 5_000);
-    socket.once("message", (raw) => {
-      clearTimeout(helloTimer);
-      const hello = parseRecord(raw.toString(), MAX_CALL_BYTES);
-      const candidate =
-        hello?.type === "hello" && typeof hello.bridgeId === "string"
-          ? this.#bridges.get(hello.bridgeId)
-          : undefined;
-      if (
-        !candidate ||
-        typeof hello?.token !== "string" ||
-        !tokensEqual(candidate.token, hello.token)
-      ) {
-        socket.close(4401, "tool bridge authentication failed");
-        return;
-      }
-      bridge = candidate;
-      bridge.sockets.add(socket);
-      sendJson(socket, {
-        type: "hello.ok",
-        bridgeId: bridge.id,
-        descriptors: bridge.descriptors,
-      });
-      socket.on("message", (later) =>
-        this.#handleBridgeMessage(bridge!, socket, later.toString()),
-      );
-    });
-    socket.on("close", () => {
-      clearTimeout(helloTimer);
-      if (!bridge) return;
-      bridge.sockets.delete(socket);
-      for (const [callId, pending] of bridge.pending) {
-        if (pending.kind !== "socket" || pending.socket !== socket) continue;
-        bridge.pending.delete(callId);
-        bridge.sink.sendToolCancel({
-          bridgeId: bridge.id,
-          bindingId: bridge.bindingId,
-          callId,
-        });
-      }
-    });
-  }
-
-  #handleBridgeMessage(
-    bridge: BridgeRecord,
-    socket: WebSocket,
-    raw: string,
-  ): void {
-    const message = parseRecord(raw, MAX_CALL_BYTES);
-    if (!message) {
-      socket.close(1009, "invalid tool bridge frame");
-      return;
-    }
-    if (message.type === "cancel" && typeof message.id === "string") {
-      const pending = bridge.pending.get(message.id);
-      if (pending?.kind === "socket") {
-        bridge.pending.delete(message.id);
-        bridge.sink.sendToolCancel({
-          bridgeId: bridge.id,
-          bindingId: bridge.bindingId,
-          callId: message.id,
-        });
-      }
-      return;
-    }
-    if (
-      message.type !== "call" ||
-      typeof message.id !== "string" ||
-      typeof message.name !== "string"
-    ) {
-      return;
-    }
-    if (
-      bridge.pending.size >= MAX_PENDING_CALLS ||
-      bridge.pending.has(message.id) ||
-      !bridge.descriptors.some((descriptor) => descriptor.name === message.name)
-    ) {
-      sendJson(socket, {
-        type: "result",
-        id: message.id,
-        error: { code: "tool_unavailable", message: "Tool call rejected" },
-      });
-      return;
-    }
-    bridge.pending.set(message.id, { kind: "socket", socket });
-    bridge.sink.sendToolCall({
-      bridgeId: bridge.id,
-      bindingId: bridge.bindingId,
-      callId: message.id,
-      name: message.name,
-      input: message.input,
-    });
-  }
-
   #requireOwned(connectionId: string, bridgeId: string): BridgeRecord {
     const bridge = this.#bridges.get(bridgeId);
     if (!bridge || bridge.connectionId !== connectionId) {
@@ -434,273 +257,4 @@ export class ToolBridgeBroker {
     }
     return bridge;
   }
-
-  async #handleMcpHttp(
-    req: IncomingMessage,
-    res: ServerResponse,
-  ): Promise<void> {
-    const pathname = new URL(req.url ?? "", "http://127.0.0.1").pathname;
-    const match = /^\/mcp\/([^/]+)$/u.exec(pathname);
-    if (!match) {
-      res.writeHead(404).end();
-      return;
-    }
-    const token = bearerToken(req.headers.authorization);
-    const bridge = this.#bridges.get(match[1] ?? "");
-    if (!bridge || !token || !tokensEqual(bridge.token, token)) {
-      res.writeHead(401).end();
-      return;
-    }
-    const server = createLapisMcpServer(
-      bridge.descriptors,
-      (name, input, signal) => this.#invokeLocal(bridge, name, input, signal),
-    );
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined,
-    });
-    await server.connect(transport);
-    try {
-      await transport.handleRequest(req, res);
-    } finally {
-      await transport.close().catch(() => undefined);
-      await server.close().catch(() => undefined);
-    }
-  }
-
-  async #invokeLocal(
-    bridge: BridgeRecord,
-    name: string,
-    input: unknown,
-    signal: AbortSignal,
-  ): Promise<unknown> {
-    if (signal.aborted) throw new Error("Tool call cancelled");
-    if (
-      bridge.pending.size >= MAX_PENDING_CALLS ||
-      !bridge.descriptors.some((descriptor) => descriptor.name === name)
-    ) {
-      return {
-        content: [{ type: "text", text: "Tool call rejected" }],
-        isError: true,
-      };
-    }
-    const callId = randomUUID();
-    const settled = await new Promise<{
-      result?: unknown;
-      error?: { code: string; message: string };
-    }>((resolve, reject) => {
-      const onAbort = () => {
-        if (!bridge.pending.delete(callId)) return;
-        bridge.sink.sendToolCancel({
-          bridgeId: bridge.id,
-          bindingId: bridge.bindingId,
-          callId,
-        });
-        reject(new Error("Tool call cancelled"));
-      };
-      signal.addEventListener("abort", onAbort, { once: true });
-      bridge.pending.set(callId, {
-        kind: "local",
-        resolve(value) {
-          signal.removeEventListener("abort", onAbort);
-          resolve(value);
-        },
-      });
-      bridge.sink.sendToolCall({
-        bridgeId: bridge.id,
-        bindingId: bridge.bindingId,
-        callId,
-        name,
-        input,
-      });
-    });
-    if (settled.error) {
-      return {
-        content: [{ type: "text", text: settled.error.message }],
-        isError: true,
-      };
-    }
-    return toMcpToolResult(settled.result);
-  }
-
-  #closeRecord(bridge: BridgeRecord): void {
-    this.#bridges.delete(bridge.id);
-    for (const [callId, pending] of bridge.pending) {
-      if (pending.kind === "local") {
-        pending.resolve({
-          error: { code: "cancelled", message: "Tool bridge closed" },
-        });
-      }
-      bridge.sink.sendToolCancel({
-        bridgeId: bridge.id,
-        bindingId: bridge.bindingId,
-        callId,
-      });
-    }
-    bridge.pending.clear();
-    for (const socket of bridge.sockets) {
-      socket.close(1000, "tool bridge closed");
-    }
-    bridge.sockets.clear();
-  }
-}
-
-function validateListenPort(port: number): number {
-  if (!Number.isInteger(port) || port < 0 || port > 65_535) {
-    throw new Error(
-      "Tool bridge listen port must be an integer from 0 to 65535",
-    );
-  }
-  return port;
-}
-
-function normalizeExternalHttpBaseUrl(value: string | undefined): URL | null {
-  if (value === undefined) return null;
-  const url = new URL(value);
-  if (
-    url.protocol !== "http:" ||
-    url.hostname !== "127.0.0.1" ||
-    url.username ||
-    url.password ||
-    url.search ||
-    url.hash
-  ) {
-    throw new Error(
-      "External tool bridge URL must be an uncredentialed 127.0.0.1 HTTP URL",
-    );
-  }
-  url.pathname = `${url.pathname.replace(/\/*$/u, "")}/`;
-  return url;
-}
-
-function sanitizeDescriptors(
-  descriptors: ToolBridgeDescriptor[],
-): ToolBridgeDescriptor[] {
-  if (!Array.isArray(descriptors) || descriptors.length > 128) {
-    throw new Error("Invalid app tool descriptor snapshot");
-  }
-  const names = new Set<string>();
-  return descriptors
-    .map((descriptor) => {
-      if (
-        !/^[a-z][a-z0-9_]{0,63}$/u.test(descriptor.name) ||
-        names.has(descriptor.name) ||
-        typeof descriptor.description !== "string" ||
-        descriptor.inputSchema?.type !== "object"
-      ) {
-        throw new Error("Invalid app tool descriptor");
-      }
-      names.add(descriptor.name);
-      return JSON.parse(JSON.stringify(descriptor)) as ToolBridgeDescriptor;
-    })
-    .sort((left, right) => left.name.localeCompare(right.name));
-}
-
-function parseRecord(
-  raw: string,
-  maxBytes: number,
-): Record<string, unknown> | null {
-  if (Buffer.byteLength(raw) > maxBytes) return null;
-  try {
-    const value = JSON.parse(raw);
-    return value && typeof value === "object" && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-function sendJson(socket: WebSocket, value: unknown): void {
-  if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(value));
-}
-
-function jsonBytes(value: unknown): number {
-  return Buffer.byteLength(JSON.stringify(value));
-}
-
-function tokensEqual(left: string, right: string): boolean {
-  const leftBytes = Buffer.from(left);
-  const rightBytes = Buffer.from(right);
-  return (
-    leftBytes.length === rightBytes.length &&
-    timingSafeEqual(leftBytes, rightBytes)
-  );
-}
-
-function bearerToken(header: string | string[] | undefined): string {
-  const value = Array.isArray(header) ? header[0] : header;
-  const match = /^Bearer\s+(\S+)$/iu.exec(value?.trim() ?? "");
-  return match?.[1] ?? "";
-}
-
-function createLapisMcpServer(
-  descriptors: ToolBridgeDescriptor[],
-  invoke: (
-    name: string,
-    input: unknown,
-    signal: AbortSignal,
-  ) => Promise<unknown>,
-): McpServer {
-  const server = new McpServer(
-    { name: "lapis-tools", version: "1.0.0" },
-    { capabilities: { tools: {} } },
-  );
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: descriptors.map((descriptor) => ({
-      name: descriptor.name,
-      description: descriptor.description,
-      inputSchema: descriptor.inputSchema,
-      outputSchema: descriptor.outputSchema,
-      annotations: {
-        readOnlyHint: descriptor.effect === "read",
-        destructiveHint: descriptor.effect === "write",
-        openWorldHint: descriptor.effect === "external",
-      },
-    })),
-  }));
-  server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest, extra: { signal: AbortSignal }) => {
-    return toMcpToolResult(
-      await invoke(
-        request.params.name,
-        request.params.arguments ?? {},
-        extra.signal,
-      ),
-    ) as never;
-  });
-  return server;
-}
-
-function toMcpToolResult(value: unknown): unknown {
-  if (!isRecord(value) || value.structuredContent === undefined) return value;
-  if (isRecord(value.structuredContent)) return value;
-  return {
-    ...value,
-    structuredContent: { value: value.structuredContent },
-  };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-export function resolveDefaultShimPath(moduleUrl = import.meta.url): string {
-  let directory = path.dirname(fileURLToPath(moduleUrl));
-  while (directory !== path.dirname(directory)) {
-    const candidate = path.join(directory, "bin", "lapis-mcp-shim.mjs");
-    if (existsSync(candidate)) return candidate;
-    directory = path.dirname(directory);
-  }
-  return path.join(directory, "bin", "lapis-mcp-shim.mjs");
-}
-
-function normalizeShimCommand(input: { command: string; args: string[] }): {
-  command: string;
-  args: string[];
-} {
-  const command = input.command.trim();
-  if (!command) throw new Error("MCP shim command must not be empty");
-  if (!Array.isArray(input.args) || input.args.some((arg) => !arg.trim())) {
-    throw new Error("MCP shim arguments must not be empty");
-  }
-  return { command, args: input.args.map((arg) => arg.trim()) };
 }

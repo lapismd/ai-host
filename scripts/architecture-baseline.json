@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "sourceCommit": "6e0ee8d207f7066fcdfaeaa8db5ff99d9fad6cbd",
+  "sourceCommit": "9a603133d563344e29a40da593787c1b1cdfd4aa",
   "limits": {
     "newProductionCountedLines": 300,
     "newTestCountedLines": 500,
@@ -30,8 +30,8 @@
       "forbiddenImportCount": 0
     },
     "scripts/architecture-policy.mjs": {
-      "countedLines": 159,
-      "physicalLines": 190,
+      "countedLines": 145,
+      "physicalLines": 176,
       "forbiddenImportCount": 0
     },
     "scripts/architecture-scan.mjs": {
@@ -110,11 +110,24 @@
       "forbiddenImportCount": 0
     },
     "src/client.ts": {
-      "countedLines": 555,
-      "physicalLines": 573,
-      "forbiddenImportCount": 0,
-      "kind": "legacy",
-      "justification": "Public ./client attach bridge; extract handshake and event fan-out before adding behaviour"
+      "countedLines": 212,
+      "physicalLines": 218,
+      "forbiddenImportCount": 0
+    },
+    "src/executor/acpx-runtime.ts": {
+      "countedLines": 173,
+      "physicalLines": 174,
+      "forbiddenImportCount": 0
+    },
+    "src/executor/catalog-commands.ts": {
+      "countedLines": 87,
+      "physicalLines": 89,
+      "forbiddenImportCount": 0
+    },
+    "src/executor/catalog.ts": {
+      "countedLines": 110,
+      "physicalLines": 114,
+      "forbiddenImportCount": 0
     },
     "src/executor/executor.capture.test.ts": {
       "countedLines": 23,
@@ -139,11 +152,69 @@
       "justification": "Executor suite; split with the extracted production boundary"
     },
     "src/executor/executor.ts": {
-      "countedLines": 1539,
-      "physicalLines": 1620,
-      "forbiddenImportCount": 0,
-      "kind": "legacy",
-      "justification": "ACP runtime facade; extract the responsibility you are changing"
+      "countedLines": 102,
+      "physicalLines": 104,
+      "forbiddenImportCount": 0
+    },
+    "src/executor/mcp-servers.ts": {
+      "countedLines": 117,
+      "physicalLines": 125,
+      "forbiddenImportCount": 0
+    },
+    "src/executor/permissions.ts": {
+      "countedLines": 81,
+      "physicalLines": 89,
+      "forbiddenImportCount": 0
+    },
+    "src/executor/process-commands.ts": {
+      "countedLines": 68,
+      "physicalLines": 71,
+      "forbiddenImportCount": 0
+    },
+    "src/executor/session-configure.ts": {
+      "countedLines": 121,
+      "physicalLines": 124,
+      "forbiddenImportCount": 0
+    },
+    "src/executor/session-control.ts": {
+      "countedLines": 110,
+      "physicalLines": 115,
+      "forbiddenImportCount": 0
+    },
+    "src/executor/session-lifecycle.ts": {
+      "countedLines": 294,
+      "physicalLines": 298,
+      "forbiddenImportCount": 0
+    },
+    "src/executor/session-prompt.ts": {
+      "countedLines": 49,
+      "physicalLines": 51,
+      "forbiddenImportCount": 0
+    },
+    "src/executor/session-start.ts": {
+      "countedLines": 90,
+      "physicalLines": 92,
+      "forbiddenImportCount": 0
+    },
+    "src/executor/session.ts": {
+      "countedLines": 88,
+      "physicalLines": 94,
+      "forbiddenImportCount": 0
+    },
+    "src/executor/state.ts": {
+      "countedLines": 29,
+      "physicalLines": 30,
+      "forbiddenImportCount": 0
+    },
+    "src/executor/tool-commands.ts": {
+      "countedLines": 74,
+      "physicalLines": 79,
+      "forbiddenImportCount": 0
+    },
+    "src/executor/types.ts": {
+      "countedLines": 266,
+      "physicalLines": 291,
+      "forbiddenImportCount": 0
     },
     "src/executor/volatile-session-store.test.ts": {
       "countedLines": 25,
@@ -260,17 +331,45 @@
       "physicalLines": 195,
       "forbiddenImportCount": 0
     },
+    "src/mcp/tool-bridge-framing.ts": {
+      "countedLines": 58,
+      "physicalLines": 64,
+      "forbiddenImportCount": 0
+    },
+    "src/mcp/tool-bridge-http.ts": {
+      "countedLines": 82,
+      "physicalLines": 84,
+      "forbiddenImportCount": 0
+    },
+    "src/mcp/tool-bridge-mcp.ts": {
+      "countedLines": 57,
+      "physicalLines": 60,
+      "forbiddenImportCount": 0
+    },
+    "src/mcp/tool-bridge-session.ts": {
+      "countedLines": 189,
+      "physicalLines": 193,
+      "forbiddenImportCount": 0
+    },
+    "src/mcp/tool-bridge-shim.ts": {
+      "countedLines": 54,
+      "physicalLines": 58,
+      "forbiddenImportCount": 0
+    },
+    "src/mcp/tool-bridge-types.ts": {
+      "countedLines": 79,
+      "physicalLines": 91,
+      "forbiddenImportCount": 0
+    },
     "src/mcp/tool-bridge.test.ts": {
       "countedLines": 314,
       "physicalLines": 329,
       "forbiddenImportCount": 0
     },
     "src/mcp/tool-bridge.ts": {
-      "countedLines": 664,
-      "physicalLines": 706,
-      "forbiddenImportCount": 0,
-      "kind": "legacy",
-      "justification": "MCP broker; split types, HTTP/WebSocket contributions, and shim resolution before adding behaviour"
+      "countedLines": 247,
+      "physicalLines": 260,
+      "forbiddenImportCount": 0
     },
     "src/protocol/protocol.ts": {
       "countedLines": 105,
@@ -290,6 +389,21 @@
     "src/ws/handshake.test.ts": {
       "countedLines": 87,
       "physicalLines": 96,
+      "forbiddenImportCount": 0
+    },
+    "src/ws/runtime-client-events.ts": {
+      "countedLines": 102,
+      "physicalLines": 104,
+      "forbiddenImportCount": 0
+    },
+    "src/ws/runtime-client-socket.ts": {
+      "countedLines": 228,
+      "physicalLines": 232,
+      "forbiddenImportCount": 0
+    },
+    "src/ws/runtime-client-types.ts": {
+      "countedLines": 101,
+      "physicalLines": 110,
       "forbiddenImportCount": 0
     },
     "src/ws/serve.test.ts": {
@@ -312,6 +426,16 @@
       "physicalLines": 19,
       "forbiddenImportCount": 0
     },
+    "src/ws/ws-broker.ts": {
+      "countedLines": 64,
+      "physicalLines": 72,
+      "forbiddenImportCount": 0
+    },
+    "src/ws/ws-commands.ts": {
+      "countedLines": 110,
+      "physicalLines": 111,
+      "forbiddenImportCount": 0
+    },
     "src/ws/ws-contract.test.ts": {
       "countedLines": 667,
       "physicalLines": 702,
@@ -319,12 +443,20 @@
       "kind": "legacy",
       "justification": "WebSocket contract suite; split with extracted host surfaces"
     },
+    "src/ws/ws-handshake.ts": {
+      "countedLines": 140,
+      "physicalLines": 148,
+      "forbiddenImportCount": 0
+    },
     "src/ws/ws-server.ts": {
-      "countedLines": 389,
-      "physicalLines": 415,
-      "forbiddenImportCount": 0,
-      "kind": "legacy",
-      "justification": "WebSocket host; extract handshake and command routing before adding behaviour"
+      "countedLines": 68,
+      "physicalLines": 75,
+      "forbiddenImportCount": 0
+    },
+    "src/ws/ws-types.ts": {
+      "countedLines": 31,
+      "physicalLines": 34,
+      "forbiddenImportCount": 0
     }
   }
 }

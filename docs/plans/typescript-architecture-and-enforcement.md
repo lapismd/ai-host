@@ -1,7 +1,6 @@
 # TypeScript architecture and enforcement
 
-**Status:** P0 landed. P1 folders landed. P2 extraction remains. Canonical
-requirements live in `spec/src`.
+**Status:** P0–P2 landed. Canonical requirements live in `spec/src`.
 
 **Kind of statements:** **Fact** is observed in this checkout. **Recommendation**
 is a chosen policy. Organisation plans under `docs/plans/` are not canonical.
@@ -49,6 +48,8 @@ src/
   old and new paths.
 - **P2.** Extract `executor.ts`, then `tool-bridge.ts`, `client.ts`, and
   `ws-server.ts` until new production files stay at or under 300 counted lines.
+  Landed: executor commands, tool-bridge helpers, attach-client helpers under
+  `src/ws/`, and WebSocket handshake/dispatch/broker modules.
 
 ## Import matrix (summary)
 

@@ -1,561 +1,127 @@
+import { AGENT_RUNTIME_PROTOCOL } from "./protocol/protocol";
 import {
-  AGENT_RUNTIME_PROTOCOL,
-  MIN_AGENT_RUNTIME_PROTOCOL,
-  isHelloRequest,
-  type CommandResult,
-  type HelloOk,
-  type NativeAgentProcessMessage,
-  type NativeAgentRuntimeEvent,
-  type ProcessMessageFrame,
-  type RuntimeReplaySubscription,
-  type RuntimeEventFrame,
-  type ToolCallFrame,
-  type ToolCancelFrame,
-} from "./protocol/protocol";
-import type { ToolBridgeCall, ToolBridgeCancel } from "./mcp/tool-bridge";
+  cancelDisconnectedToolCalls,
+  ensureClientConnected,
+} from "./ws/runtime-client-socket";
+import {
+  resolveAgentRuntimeAttachConfig,
+  type AgentRuntimeAttachConfig,
+  type AgentRuntimeBridge,
+  type ClientRuntimeState,
+} from "./ws/runtime-client-types";
 
-export type AgentRuntimeAttachConfig = {
-  url: string;
-  token: string;
-  manualAcknowledgement?: boolean;
-  replayCursors?: Array<{ sessionId: string; afterSequence: number }>;
-};
-
-export type AgentRuntimeBridge = {
-  readonly runtime: "deno-desktop";
-  readonly capabilities: {
-    "agent-runtime": {
-      id: "agent-runtime";
-      status: "available";
-      provider: string;
-      details: Record<string, string>;
-    };
-  };
-  invoke<T>(command: string, payload?: Record<string, unknown>): Promise<T>;
-  acknowledgeAgentRuntimeEvent(sessionId: string, sequence: number): void;
-  dispose(): void;
-  toFileUrl(path: string): string;
-  onAgentRuntimeEvent?(
-    listener: (event: NativeAgentRuntimeEvent) => void,
-  ): () => void;
-  onAgentProcessMessage?(
-    listener: (event: NativeAgentProcessMessage) => void,
-  ): () => void;
-  onAgentToolCall?(listener: (event: ToolBridgeCall) => void): () => void;
-  onAgentToolCancel?(listener: (event: ToolBridgeCancel) => void): () => void;
-};
-
-type Pending = {
-  resolve(value: unknown): void;
-  reject(error: Error): void;
-};
-
-function trim(value: string | undefined): string {
-  return value?.trim() ?? "";
-}
-
-function readEnv(name: string): string {
-  const meta = (import.meta as { env?: Record<string, string | undefined> })
-    .env;
-  const fromMeta = trim(meta?.[name]);
-  if (fromMeta) return fromMeta;
-  if (typeof process !== "undefined") {
-    const fromProcess = trim(process.env?.[name]);
-    if (fromProcess) return fromProcess;
-  }
-  const globalConfig = (
-    globalThis as {
-      __LAPIS_AGENT_RUNTIME__?: Partial<AgentRuntimeAttachConfig>;
-    }
-  ).__LAPIS_AGENT_RUNTIME__;
-  if (name === "LAPIS_AGENT_RUNTIME_URL") return trim(globalConfig?.url);
-  if (name === "LAPIS_AGENT_RUNTIME_TOKEN") return trim(globalConfig?.token);
-  return "";
-}
-
-export function resolveAgentRuntimeAttachConfig(
-  options?: Partial<AgentRuntimeAttachConfig>,
-): AgentRuntimeAttachConfig | null {
-  const url = trim(options?.url) || readEnv("LAPIS_AGENT_RUNTIME_URL");
-  const token = trim(options?.token) || readEnv("LAPIS_AGENT_RUNTIME_TOKEN");
-  if (!url || !token) return null;
-  return { url, token };
-}
+export type {
+  AgentRuntimeAttachConfig,
+  AgentRuntimeBridge,
+} from "./ws/runtime-client-types";
+export { resolveAgentRuntimeAttachConfig } from "./ws/runtime-client-types";
 
 export function createAgentRuntimeBridge(
   options: AgentRuntimeAttachConfig,
 ): AgentRuntimeBridge {
-  let socket: WebSocket | null = null;
-  let connectPromise: Promise<void> | null = null;
-  const pending = new Map<string, Pending>();
-  const runtimeListeners = new Set<(event: NativeAgentRuntimeEvent) => void>();
-  const processListeners = new Set<
-    (event: NativeAgentProcessMessage) => void
-  >();
-  const toolCallListeners = new Set<(event: ToolBridgeCall) => void>();
-  const toolCancelListeners = new Set<(event: ToolBridgeCancel) => void>();
-  const activeToolCalls = new Map<string, ToolBridgeCall>();
-  const activeToolBridges = new Set<string>();
-  const activeSessions = new Map<string, number>(
-    (options.replayCursors ?? []).map((cursor) => [
-      cursor.sessionId,
-      cursor.afterSequence,
-    ]),
-  );
-  const receivedSessions = new Map(activeSessions);
-  const replayGapSequences = new Map<string, number>();
-  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  let disposed = false;
-  let nextId = 0;
-  let negotiatedProtocol = AGENT_RUNTIME_PROTOCOL;
-  const agentRuntimeCapability = {
-    id: "agent-runtime" as const,
-    status: "available" as const,
-    provider: "lapis-ai-host",
-    details: {
-      protocol: "desktop_agent_*",
-      protocolVersion: String(AGENT_RUNTIME_PROTOCOL),
-      transport: "websocket",
-      appTools: "stdio-mcp",
-      sessionConfiguration: "configure",
-    },
-  };
-
-  function nextMessageId(): string {
-    nextId += 1;
-    return `ai-host-${nextId}`;
-  }
-
-  function handleFrame(data: string): void {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(data);
-    } catch {
-      return;
-    }
-    if (!parsed || typeof parsed !== "object") return;
-    const record = parsed as Record<string, unknown>;
-    if (record.type === "agent-runtime-event") {
-      const frame = parsed as RuntimeEventFrame;
-      const previous = receivedSessions.get(frame.event.sessionId);
-      if (previous != null && frame.event.sequence <= previous) return;
-      if (previous != null && frame.event.sequence > previous + 1) {
-        receivedSessions.set(frame.event.sessionId, frame.event.sequence);
-        if (!options.manualAcknowledgement) {
-          activeSessions.set(frame.event.sessionId, frame.event.sequence);
-        }
-        notifyReplayGap(frame.event.sessionId, previous, frame.event.sequence);
-        return;
-      }
-      receivedSessions.set(frame.event.sessionId, frame.event.sequence);
-      if (!options.manualAcknowledgement) {
-        activeSessions.set(frame.event.sessionId, frame.event.sequence);
-      }
-      for (const listener of runtimeListeners) listener(frame.event);
-      return;
-    }
-    if (record.type === "agent-process-message") {
-      const frame = parsed as ProcessMessageFrame;
-      for (const listener of processListeners) listener(frame.event);
-      return;
-    }
-    if (record.type === "desktop_agent_tool_call") {
-      const frame = parsed as ToolCallFrame;
-      activeToolCalls.set(toolCallKey(frame.event), frame.event);
-      for (const listener of toolCallListeners) listener(frame.event);
-      return;
-    }
-    if (record.type === "desktop_agent_tool_cancel") {
-      const frame = parsed as ToolCancelFrame;
-      activeToolCalls.delete(toolCallKey(frame.event));
-      for (const listener of toolCancelListeners) listener(frame.event);
-      return;
-    }
-    if (typeof record.id === "string") {
-      const waiter = pending.get(record.id);
-      if (!waiter) return;
-      pending.delete(record.id);
-      const result = parsed as CommandResult & Partial<HelloOk>;
-      if (result.error) {
-        waiter.reject(new Error(result.error.message));
-        return;
-      }
-      waiter.resolve(result.result ?? result);
-    }
-  }
-
-  function notifyReplayGap(
-    sessionId: string,
-    afterSequence: number,
-    receivedSequence: number,
-  ): void {
-    if ((replayGapSequences.get(sessionId) ?? -1) >= receivedSequence) return;
-    replayGapSequences.set(sessionId, receivedSequence);
-    const message =
-      `Agent-runtime replay gap after sequence ${afterSequence}; ` +
-      "the interrupted turn was not resent because it may have caused side effects.";
-    const event: NativeAgentRuntimeEvent = {
-      sessionId,
-      runId: "replay-gap",
-      sequence: receivedSequence,
-      event: {
-        type: "closed",
-        event: {
-          type: "error",
-          code: "AGENT_RUNTIME_REPLAY_GAP",
-          message,
-        },
+  const state: ClientRuntimeState = {
+    options,
+    pending: new Map(),
+    runtimeListeners: new Set(),
+    processListeners: new Set(),
+    toolCallListeners: new Set(),
+    toolCancelListeners: new Set(),
+    activeToolCalls: new Map(),
+    activeToolBridges: new Set(),
+    activeSessions: new Map(
+      (options.replayCursors ?? []).map((cursor) => [
+        cursor.sessionId,
+        cursor.afterSequence,
+      ]),
+    ),
+    receivedSessions: new Map(),
+    replayGapSequences: new Map(),
+    agentRuntimeCapability: {
+      id: "agent-runtime",
+      status: "available",
+      provider: "lapis-ai-host",
+      details: {
+        protocol: "desktop_agent_*",
+        protocolVersion: String(AGENT_RUNTIME_PROTOCOL),
+        transport: "websocket",
+        appTools: "stdio-mcp",
+        sessionConfiguration: "configure",
       },
-    };
-    for (const listener of runtimeListeners) listener(event);
-  }
-
-  function scheduleReconnect(): void {
-    if (disposed || reconnectTimer || activeSessions.size === 0) return;
-    reconnectTimer = setTimeout(() => {
-      reconnectTimer = null;
-      void ensureConnected().catch(() => scheduleReconnect());
-    }, 250);
-  }
-
-  function cancelDisconnectedToolCalls(): void {
-    for (const call of activeToolCalls.values()) {
-      const cancel: ToolBridgeCancel = {
-        bridgeId: call.bridgeId,
-        bindingId: call.bindingId,
-        callId: call.callId,
-      };
-      for (const listener of toolCancelListeners) listener(cancel);
-    }
-    activeToolCalls.clear();
-    if (activeToolBridges.size === 0) return;
-    for (const [sessionId, previous] of activeSessions) {
-      const sequence = previous + 1;
-      receivedSessions.set(sessionId, sequence);
-      if (!options.manualAcknowledgement)
-        activeSessions.set(sessionId, sequence);
-      for (const listener of runtimeListeners) {
-        listener({
-          sessionId,
-          runId: "app-tool-bridge-disconnect",
-          sequence,
-          event: {
-            type: "closed",
-            event: {
-              type: "error",
-              code: "AGENT_TOOL_BRIDGE_DISCONNECTED",
-              message:
-                "Application-tool authorization was revoked when the agent host disconnected. Retry to create a new binding.",
-            },
-          },
-        });
-      }
-    }
-    activeToolBridges.clear();
-  }
-
-  async function ensureConnected(): Promise<void> {
-    if (disposed) throw new Error("Agent-runtime bridge is disposed");
-    if (socket?.readyState === WebSocket.OPEN) {
-      if (connectPromise) await connectPromise;
-      return;
-    }
-    if (!connectPromise) {
-      connectPromise = new Promise<void>((resolve, reject) => {
-        const next = new WebSocket(options.url);
-        socket = next;
-        const helloId = nextMessageId();
-        let finished = false;
-        let ready = false;
-        const fail = (error: Error) => {
-          if (finished) return;
-          finished = true;
-          clearTimeout(timer);
-          next.close();
-          if (socket === next) socket = null;
-          connectPromise = null;
-          reject(error);
-          scheduleReconnect();
-        };
-        const timer = setTimeout(() => {
-          fail(new Error(`Agent-runtime connection timed out: ${options.url}`));
-        }, 5_000);
-        const onHandshake = (event: MessageEvent) => {
-          let parsed: unknown;
-          try {
-            parsed = JSON.parse(String(event.data));
-          } catch {
-            fail(new Error("Invalid agent-runtime handshake"));
-            return;
-          }
-          if (
-            parsed &&
-            typeof parsed === "object" &&
-            (parsed as HelloOk).type === "hello.ok" &&
-            (parsed as HelloOk).id === helloId &&
-            Number.isInteger((parsed as HelloOk).protocol) &&
-            (parsed as HelloOk).protocol >= MIN_AGENT_RUNTIME_PROTOCOL &&
-            (parsed as HelloOk).protocol <= AGENT_RUNTIME_PROTOCOL
-          ) {
-            negotiatedProtocol = (parsed as HelloOk).protocol;
-            agentRuntimeCapability.details.protocolVersion =
-              String(negotiatedProtocol);
-            agentRuntimeCapability.details.appTools =
-              negotiatedProtocol >= 3 ? "stdio-mcp" : "unavailable";
-            agentRuntimeCapability.details.sessionConfiguration =
-              negotiatedProtocol >= 4 ? "configure" : "unavailable";
-            next.removeEventListener("message", onHandshake);
-            next.addEventListener("message", (later) => {
-              handleFrame(String(later.data));
-            });
-            const cursors = [...activeSessions].map(
-              ([sessionId, afterSequence]) => ({ sessionId, afterSequence }),
-            );
-            const finish = () => {
-              if (finished) return;
-              finished = true;
-              ready = true;
-              clearTimeout(timer);
-              resolve();
-            };
-            if (cursors.length === 0) {
-              finish();
-              return;
-            }
-            const id = nextMessageId();
-            const subscribed = new Promise<RuntimeReplaySubscription[]>(
-              (resolveSubscribe, rejectSubscribe) => {
-                pending.set(id, {
-                  resolve: (value) =>
-                    resolveSubscribe(value as RuntimeReplaySubscription[]),
-                  reject: rejectSubscribe,
-                });
-                next.send(
-                  JSON.stringify({
-                    id,
-                    command: "desktop_agent_runtime_subscribe",
-                    payload: { sessions: cursors },
-                  }),
-                );
-              },
-            );
-            void subscribed.then((results) => {
-              for (const result of results) {
-                const previous = activeSessions.get(result.sessionId) ?? 0;
-                if (result.gap) {
-                  const interruptedSequence = Math.max(
-                    result.latestSequence,
-                    previous + 1,
-                  );
-                  activeSessions.set(result.sessionId, interruptedSequence);
-                  receivedSessions.set(result.sessionId, interruptedSequence);
-                  notifyReplayGap(
-                    result.sessionId,
-                    previous,
-                    interruptedSequence,
-                  );
-                }
-              }
-              finish();
-            }, fail);
-            return;
-          }
-          if (isHelloRequest(parsed)) {
-            fail(new Error("Unexpected hello from agent-runtime host"));
-            return;
-          }
-          fail(new Error("Agent-runtime handshake failed"));
-        };
-        next.addEventListener("open", () => {
-          next.send(
-            JSON.stringify({
-              id: helloId,
-              type: "hello",
-              token: options.token,
-            }),
-          );
-        });
-        next.addEventListener("message", onHandshake);
-        next.addEventListener("error", () => {
-          fail(new Error("Agent-runtime socket error"));
-        });
-        next.addEventListener("close", (event) => {
-          if (!ready) {
-            fail(
-              new Error(
-                event.reason ||
-                  (event.code >= 4000
-                    ? "Agent-runtime authentication failed"
-                    : "Agent-runtime connection closed"),
-              ),
-            );
-            return;
-          }
-          const message = event.reason || "Agent-runtime connection closed";
-          const error = new Error(message);
-          for (const [id, waiter] of pending) {
-            pending.delete(id);
-            waiter.reject(error);
-          }
-          cancelDisconnectedToolCalls();
-          if (socket === next) socket = null;
-          connectPromise = null;
-          scheduleReconnect();
-        });
-      });
-    }
-    await connectPromise;
-    if (disposed) throw new Error("Agent-runtime bridge is disposed");
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
-      throw new Error("Agent-runtime socket is not open");
-    }
-  }
-
-  async function invoke<T>(
-    command: string,
-    payload?: Record<string, unknown>,
-  ): Promise<T> {
-    await ensureConnected();
-    if (command.startsWith("desktop_agent_tools_") && negotiatedProtocol < 3) {
-      throw new Error(
-        "Application tools require an agent host with protocol v3 support.",
-      );
-    }
-    if (command === "desktop_agent_acp_configure" && negotiatedProtocol < 4) {
-      throw new Error(
-        "Agent session configuration requires a host with protocol v4 support.",
-      );
-    }
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
-      throw new Error("Agent-runtime socket is not open");
-    }
-    const commandPayload = continuationPayload(command, payload);
-    const id = nextMessageId();
-    const result = await new Promise<unknown>((resolve, reject) => {
-      pending.set(id, { resolve, reject });
-      socket!.send(JSON.stringify({ id, command, payload: commandPayload }));
-    });
-    if (command === "desktop_agent_tools_open") {
-      const bridgeId = String(
-        (result as { bridgeId?: unknown } | null)?.bridgeId ?? "",
-      );
-      if (bridgeId) activeToolBridges.add(bridgeId);
-    }
-    if (command === "desktop_agent_tools_respond") {
-      activeToolCalls.delete(
-        `${String(payload?.bridgeId ?? "")}:${String(payload?.callId ?? "")}`,
-      );
-    }
-    if (command === "desktop_agent_tools_close") {
-      const bridgeId = String(payload?.bridgeId ?? "");
-      activeToolBridges.delete(bridgeId);
-      for (const [key, call] of activeToolCalls) {
-        if (call.bridgeId === bridgeId) activeToolCalls.delete(key);
-      }
-    }
-    const sessionId =
-      result && typeof result === "object" && "sessionId" in result
-        ? String((result as { sessionId?: unknown }).sessionId ?? "")
-        : "";
-    if (command === "desktop_agent_acp_start" && sessionId) {
-      if (!activeSessions.has(sessionId)) activeSessions.set(sessionId, 0);
-      if (!receivedSessions.has(sessionId)) receivedSessions.set(sessionId, 0);
-    }
-    if (command === "desktop_agent_acp_close") {
-      const closedSessionId = String(payload?.sessionId ?? "");
-      activeSessions.delete(closedSessionId);
-      receivedSessions.delete(closedSessionId);
-      replayGapSequences.delete(closedSessionId);
-      if (activeSessions.size === 0 && reconnectTimer) {
-        clearTimeout(reconnectTimer);
-        reconnectTimer = null;
-      }
-    }
-    return result as T;
-  }
-
-  function continuationPayload(
-    command: string,
-    payload: Record<string, unknown> | undefined,
-  ): Record<string, unknown> | undefined {
-    if (command !== "desktop_agent_acp_start") return payload;
-    const sessionId = String(payload?.sessionId ?? "");
-    const sequenceBase = activeSessions.get(sessionId);
-    if (!sessionId || sequenceBase === undefined) return payload;
-    return { ...payload, sequenceBase };
-  }
+    },
+    nextId: 0,
+    negotiatedProtocol: AGENT_RUNTIME_PROTOCOL,
+    disposed: false,
+    socket: null,
+    connectPromise: null,
+    reconnectTimer: null,
+  };
+  state.receivedSessions = new Map(state.activeSessions);
 
   return {
     runtime: "deno-desktop",
     capabilities: {
-      "agent-runtime": agentRuntimeCapability,
+      "agent-runtime": state.agentRuntimeCapability,
     },
-    invoke,
+    invoke: (command, payload) => invokeClientCommand(state, command, payload),
     acknowledgeAgentRuntimeEvent(sessionId, sequence) {
       if (!Number.isSafeInteger(sequence) || sequence < 0) {
         throw new Error(
           "Agent-runtime acknowledgement requires a valid sequence",
         );
       }
-      const received = receivedSessions.get(sessionId);
+      const received = state.receivedSessions.get(sessionId);
       if (received === undefined || sequence > received) {
         throw new Error(
           `Cannot acknowledge unreceived sequence for ${sessionId}`,
         );
       }
-      const acknowledged = activeSessions.get(sessionId) ?? 0;
-      if (sequence > acknowledged) activeSessions.set(sessionId, sequence);
+      const acknowledged = state.activeSessions.get(sessionId) ?? 0;
+      if (sequence > acknowledged) state.activeSessions.set(sessionId, sequence);
     },
     dispose() {
-      disposed = true;
-      cancelDisconnectedToolCalls();
-      activeSessions.clear();
-      receivedSessions.clear();
-      replayGapSequences.clear();
-      toolCallListeners.clear();
-      toolCancelListeners.clear();
-      activeToolBridges.clear();
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      reconnectTimer = null;
+      state.disposed = true;
+      cancelDisconnectedToolCalls(state);
+      state.activeSessions.clear();
+      state.receivedSessions.clear();
+      state.replayGapSequences.clear();
+      state.toolCallListeners.clear();
+      state.toolCancelListeners.clear();
+      state.activeToolBridges.clear();
+      if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
+      state.reconnectTimer = null;
       const error = new Error("Agent-runtime bridge disposed");
-      for (const [id, waiter] of pending) {
-        pending.delete(id);
+      for (const [id, waiter] of state.pending) {
+        state.pending.delete(id);
         waiter.reject(error);
       }
-      socket?.close(1000, "agent-runtime bridge disposed");
-      socket = null;
-      connectPromise = null;
+      state.socket?.close(1000, "agent-runtime bridge disposed");
+      state.socket = null;
+      state.connectPromise = null;
     },
     toFileUrl(path) {
       return path;
     },
     onAgentRuntimeEvent(listener) {
-      runtimeListeners.add(listener);
+      state.runtimeListeners.add(listener);
       return () => {
-        runtimeListeners.delete(listener);
+        state.runtimeListeners.delete(listener);
       };
     },
     onAgentProcessMessage(listener) {
-      processListeners.add(listener);
+      state.processListeners.add(listener);
       return () => {
-        processListeners.delete(listener);
+        state.processListeners.delete(listener);
       };
     },
     onAgentToolCall(listener) {
-      toolCallListeners.add(listener);
-      return () => toolCallListeners.delete(listener);
+      state.toolCallListeners.add(listener);
+      return () => state.toolCallListeners.delete(listener);
     },
     onAgentToolCancel(listener) {
-      toolCancelListeners.add(listener);
-      return () => toolCancelListeners.delete(listener);
+      state.toolCancelListeners.add(listener);
+      return () => state.toolCancelListeners.delete(listener);
     },
   };
-}
-
-function toolCallKey(
-  event: Pick<ToolBridgeCall, "bridgeId" | "callId">,
-): string {
-  return `${event.bridgeId}:${event.callId}`;
 }
 
 export function maybeRegisterAgentRuntimeBridge(
@@ -570,4 +136,83 @@ export function maybeRegisterAgentRuntimeBridge(
   if (!options?.register) return false;
   options.register(createAgentRuntimeBridge(config));
   return true;
+}
+
+async function invokeClientCommand<T>(
+  state: ClientRuntimeState,
+  command: string,
+  payload?: Record<string, unknown>,
+): Promise<T> {
+  await ensureClientConnected(state);
+  if (command.startsWith("desktop_agent_tools_") && state.negotiatedProtocol < 3) {
+    throw new Error(
+      "Application tools require an agent host with protocol v3 support.",
+    );
+  }
+  if (command === "desktop_agent_acp_configure" && state.negotiatedProtocol < 4) {
+    throw new Error(
+      "Agent session configuration requires a host with protocol v4 support.",
+    );
+  }
+  if (!state.socket || state.socket.readyState !== WebSocket.OPEN) {
+    throw new Error("Agent-runtime socket is not open");
+  }
+  const commandPayload = continuationPayload(state, command, payload);
+  state.nextId += 1;
+  const id = `ai-host-${state.nextId}`;
+  const result = await new Promise<unknown>((resolve, reject) => {
+    state.pending.set(id, { resolve, reject });
+    state.socket!.send(JSON.stringify({ id, command, payload: commandPayload }));
+  });
+  if (command === "desktop_agent_tools_open") {
+    const bridgeId = String(
+      (result as { bridgeId?: unknown } | null)?.bridgeId ?? "",
+    );
+    if (bridgeId) state.activeToolBridges.add(bridgeId);
+  }
+  if (command === "desktop_agent_tools_respond") {
+    state.activeToolCalls.delete(
+      `${String(payload?.bridgeId ?? "")}:${String(payload?.callId ?? "")}`,
+    );
+  }
+  if (command === "desktop_agent_tools_close") {
+    const bridgeId = String(payload?.bridgeId ?? "");
+    state.activeToolBridges.delete(bridgeId);
+    for (const [key, call] of state.activeToolCalls) {
+      if (call.bridgeId === bridgeId) state.activeToolCalls.delete(key);
+    }
+  }
+  const sessionId =
+    result && typeof result === "object" && "sessionId" in result
+      ? String((result as { sessionId?: unknown }).sessionId ?? "")
+      : "";
+  if (command === "desktop_agent_acp_start" && sessionId) {
+    if (!state.activeSessions.has(sessionId))
+      state.activeSessions.set(sessionId, 0);
+    if (!state.receivedSessions.has(sessionId))
+      state.receivedSessions.set(sessionId, 0);
+  }
+  if (command === "desktop_agent_acp_close") {
+    const closedSessionId = String(payload?.sessionId ?? "");
+    state.activeSessions.delete(closedSessionId);
+    state.receivedSessions.delete(closedSessionId);
+    state.replayGapSequences.delete(closedSessionId);
+    if (state.activeSessions.size === 0 && state.reconnectTimer) {
+      clearTimeout(state.reconnectTimer);
+      state.reconnectTimer = null;
+    }
+  }
+  return result as T;
+}
+
+function continuationPayload(
+  state: ClientRuntimeState,
+  command: string,
+  payload: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (command !== "desktop_agent_acp_start") return payload;
+  const sessionId = String(payload?.sessionId ?? "");
+  const sequenceBase = state.activeSessions.get(sessionId);
+  if (!sessionId || sequenceBase === undefined) return payload;
+  return { ...payload, sequenceBase };
 }

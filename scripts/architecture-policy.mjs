@@ -163,20 +163,6 @@ export function isFatalEdge(fromLayer, toLayer) {
 }
 
 export const HOTSPOT_JUSTIFICATIONS = {
-  "src/executor.ts":
-    "ACP runtime orchestrator; extract catalog, session, MCP projection, permissions, and default runtime before adding behaviour",
-  "src/executor/executor.ts":
-    "ACP runtime facade; extract the responsibility you are changing",
-  "src/tool-bridge.ts":
-    "MCP broker; split types, HTTP/WebSocket contributions, and shim resolution before adding behaviour",
-  "src/mcp/tool-bridge.ts":
-    "MCP broker; split types, HTTP/WebSocket contributions, and shim resolution before adding behaviour",
-  "src/client.ts":
-    "Public ./client attach bridge; extract handshake and event fan-out before adding behaviour",
-  "src/ws-server.ts":
-    "WebSocket host; extract handshake and command routing before adding behaviour",
-  "src/ws/ws-server.ts":
-    "WebSocket host; extract handshake and command routing before adding behaviour",
   "src/executor.test.ts":
     "Executor suite; split with the extracted production boundary",
   "src/executor/executor.test.ts":

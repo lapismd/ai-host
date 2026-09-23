@@ -56,12 +56,7 @@ export default defineConfig(tableRequirements(), {
         },
         {
           pattern:
-            "^(?:src/(?:serve|parse-cli|cli|token)\\.ts$|src/ws/(?:serve|token)\\.ts$)",
-          chapters: ["spec/src/protocol.md"],
-        },
-        {
-          pattern:
-            "^(?:src/(?:ws-server|protocol|replay-buffer|client)\\.ts$|src/ws/ws-server\\.ts$|src/protocol/|src/client\\.ts$)",
+            "^(?:src/(?:serve|parse-cli|cli|token)\\.ts$|src/ws/|src/(?:ws-server|protocol|replay-buffer|client)\\.ts$|src/protocol/)",
           chapters: ["spec/src/protocol.md"],
         },
         {
