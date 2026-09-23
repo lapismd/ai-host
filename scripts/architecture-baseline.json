@@ -182,8 +182,8 @@
       "forbiddenImportCount": 0
     },
     "src/executor/session-lifecycle.ts": {
-      "countedLines": 294,
-      "physicalLines": 298,
+      "countedLines": 265,
+      "physicalLines": 269,
       "forbiddenImportCount": 0
     },
     "src/executor/session-prompt.ts": {

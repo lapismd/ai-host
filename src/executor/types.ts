@@ -41,7 +41,7 @@ export type AcpStartPayload = {
   workspace?: string;
   agent?: string;
   model?: { provider?: string; model?: string };
-  thinking?: AcpThinkingValue;
+  thinking?: AcpThinkingValue; permissionMode?: string;
   metadata?: Record<string, unknown>;
   mcpServers?: AcpMcpServer[];
   resumeSessionId?: string;

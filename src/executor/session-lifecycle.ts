@@ -1,9 +1,6 @@
 import { resolveAcpAgent, type AcpAgentDefinition } from "../acp/acp-agent";
-import {
-  advertisedCursorEffort,
-  toAcpxSessionOptions,
-  toAcpxThinkingValue,
-} from "../acp/acp-session-options";
+import { toAcpxSessionOptions } from "../acp/acp-session-options";
+import { applyStartupConfiguration } from "./session-startup-config";
 import { mergeCursorAvailableModels } from "../inventory/acp-model-inventory";
 import { rememberLastGoodCatalog } from "./catalog";
 import { restrictedAcpPayload, withAppToolMcpServer } from "./mcp-servers";
@@ -12,7 +9,6 @@ import {
   createAcpSessionState,
   emitRuntimeEvent,
   resolveSequenceBase,
-  thinkingConfigurationKey,
 } from "./session";
 import type { ExecutorState } from "./state";
 import type {
@@ -133,38 +129,13 @@ export async function initializeAcpSession(
       agent: agent.id,
     }),
   });
-  const thinking = toAcpxThinkingValue({
-    agent: agent.id,
-    thinking:
-      effectivePayload.thinking ??
-      (agent.id === "cursor" && effectivePayload.model?.model
-        ? advertisedCursorEffort(effectivePayload.model.model)
-        : undefined),
+  await applyStartupConfiguration({
+    runtime,
+    handle,
+    payload: effectivePayload,
+    agentId: agent.id,
+    resumeSessionId: payload.resumeSessionId,
   });
-  const thinkingKey = thinking
-    ? await thinkingConfigurationKey(runtime, handle)
-    : undefined;
-  if (thinking && thinkingKey) {
-    try {
-      if (!runtime.setConfigOption) {
-        throw new Error(
-          `ACP agent ${agent.id} does not support thinking configuration.`,
-        );
-      }
-      await runtime.setConfigOption({
-        handle,
-        key: thinkingKey,
-        value: thinking,
-      });
-    } catch (error) {
-      await runtime.close({
-        handle,
-        reason: "thinking configuration unavailable",
-        discardPersistentState: !payload.resumeSessionId,
-      });
-      throw error;
-    }
-  }
   session.runtime = runtime;
   session.handle = handle;
   session.agentId = agent.id;
