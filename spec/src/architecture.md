@@ -45,6 +45,7 @@ shape.
 
 | AH-PKG-007 | Built declarations MUST preserve typed public contracts under TypeScript NodeNext and Bundler resolution. Relative declaration imports MUST resolve to emitted ESM paths rather than silently degrading public types to `any`. |
 | AH-PKG-008 | Root `check` and `checks:release` MUST run `pnpm audit` against the committed lockfile. Release revalidation MUST invoke that audit explicitly. Fixable findings MUST be resolved with declared ranges or workspace overrides in the same change. |
+| AH-ARCH-001 | Repository validation MUST enforce counted-line budgets and the feature dependency matrix with `scripts/check-architecture.mjs`. New production source MUST NOT exceed 300 counted lines. New tests MUST NOT exceed 500 counted lines. Existing files MUST NOT increase counted lines without updating the path budget in `scripts/architecture-baseline.json` in the same change. A recorded budget MUST fail when the current counted size plus twenty is still below that budget. Production modules MUST NOT import tests. `src/file-tools` MUST NOT import MCP, executor, or WebSocket transport. Feature modules MUST follow the published dependency matrix. Composition roots MAY import feature modules. Organisation plans under `docs/plans/` are not canonical requirements. |
 
 Operator migration is specified in [the retired CLI boundary](./cli.md). AI
 Controller owns runnable service commands; the private MCP shim remains an
@@ -54,3 +55,12 @@ minor release so npm no longer advertises the retired `lapis-ai-host` command.
 Root validation runs `pnpm audit` before typechecking so a lockfile or override
 change cannot land with a known-vulnerable graph. Workspace overrides pin
 transitive patches such as Vitest 4.1.11.
+
+For AH-ARCH-001, `scripts/check-architecture.mjs` enforces counted-line budgets
+and the feature dependency matrix. New production and script files must stay at
+or under 300 counted lines; new tests at or under 500. Existing files must not
+grow counted lines without updating `scripts/architecture-baseline.json` in the
+same change. A recorded budget fails when the current counted size plus twenty
+is still below that budget. `src/file-tools` must not import MCP, executor, or
+WebSocket transport. Organisation plans under `docs/plans/` are not canonical
+requirements.

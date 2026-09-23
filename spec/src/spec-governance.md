@@ -23,7 +23,7 @@ MUST update the mapped chapter in the same Jujutsu change.
 | `src/mcp-shim.ts`, `src/mcp-shim-cli.ts`, `src/tool-bridge.ts`                                                                                            | `executor.md`        |
 | `src/file-tools/`                                                                                                                                         | `file-tools.md`      |
 | `src/cli/**`, `src/cli.ts`, `src/main.ts`, `deno.json`, `deno.lock`, `docs/cli/**`, `scripts/build-cli.ts`, `scripts/docs-cli.ts`, `scripts/smoke-cli.ts` | `cli.md`             |
-| `package.json`, `src/index.ts`, `bin/`, `scripts/`, `.changeset/`, `.github/workflows/`, `CHANGELOG.md`, `LICENSE.md`, `README.md`                        | `architecture.md`    |
+| `package.json`, `src/index.ts`, `bin/`, `scripts/`, `docs/plans/`, `.changeset/`, `.github/workflows/`, `CHANGELOG.md`, `LICENSE.md`, `README.md`          | `architecture.md`    |
 | `spec-validator.config.mjs`, `AGENTS.md`, `pnpm-workspace.yaml`, `spec/book.toml`, `.gitignore`                                                           | `spec-governance.md` |
 
 The repository-owned validator configuration and pnpm workspace file remain

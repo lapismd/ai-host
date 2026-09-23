@@ -77,6 +77,11 @@ export default defineConfig(tableRequirements(), {
         },
         {
           pattern:
+            "^(?:docs/plans/|scripts/(?:check-architecture|architecture))",
+          chapters: ["spec/src/architecture.md"],
+        },
+        {
+          pattern:
             "^(?:package\\.json$|src/index\\.ts$|bin/|scripts/|\\.changeset/|\\.github/workflows/|CHANGELOG\\.md$|LICENSE\\.md$|README\\.md$)",
           chapters: ["spec/src/architecture.md"],
         },
@@ -87,12 +92,15 @@ export default defineConfig(tableRequirements(), {
         },
       ],
       protected: [
-        "^(?:deno\\.(?:json|lock)$|docs/cli/|src/|package\\.json$|bin/|scripts/|\\.changeset/|\\.github/workflows/|CHANGELOG\\.md$|LICENSE\\.md$|README\\.md$|\\.gitignore$|spec-validator\\.config\\.mjs$|AGENTS\\.md$|pnpm-workspace\\.yaml$)",
+        "^(?:deno\\.(?:json|lock)$|docs/cli/|docs/plans/|src/|package\\.json$|bin/|scripts/|\\.changeset/|\\.github/workflows/|CHANGELOG\\.md$|LICENSE\\.md$|README\\.md$|\\.gitignore$|spec-validator\\.config\\.mjs$|AGENTS\\.md$|pnpm-workspace\\.yaml$)",
       ],
     },
   },
   check: {
-    lanes: [{ name: "tests", command: "pnpm", args: ["test"] }],
+    lanes: [
+      { name: "architecture", command: "node", args: ["scripts/check-architecture.mjs"] },
+      { name: "tests", command: "pnpm", args: ["test"] },
+    ],
     build: true,
     first: true,
   },

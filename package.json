@@ -35,7 +35,8 @@
   "scripts": {
     "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.json && node scripts/bundle-package.mjs",
     "audit": "pnpm audit",
-    "check": "pnpm audit && pnpm spec:validate && pnpm check:types",
+    "check": "pnpm audit && pnpm spec:validate && pnpm check:architecture && pnpm check:types",
+    "check:architecture": "node scripts/check-architecture.mjs",
     "check:types": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "publint": "pnpm build && publint",

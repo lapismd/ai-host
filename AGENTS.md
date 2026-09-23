@@ -55,3 +55,27 @@ filtered source history after the retained migration audit has been recorded.
 
 The standalone operator CLI and service lifecycle belong to sibling
 `ai-controller`. Do not add package bins or a standalone host service here.
+
+## Source organisation
+
+Inspect the owning `src/<feature>/` tree and
+`docs/plans/typescript-architecture-and-enforcement.md` before adding files.
+Do not grow files over 300 counted lines. Add behaviour in the owning
+`src/<feature>/` module rather than a composition facade. `src/file-tools`
+must stay algorithm-only: no MCP, acpx, or transport imports. Internal
+modules import siblings directly, not `src/index.ts`. Run
+`pnpm check:architecture` with the relevant tests.
+
+### Completion checklist
+
+- [ ] New/changed modules have one primary responsibility and a
+      feature-specific name (not `utils` / `helpers` / `common`).
+- [ ] Placement matches protocol / acp / inventory / executor / mcp / ws /
+      file-tools owners.
+- [ ] Imports follow the dependency matrix; no file-tools→MCP/transport; no
+      production→test imports.
+- [ ] Counted lines: new files ≤ 300 (tests ≤ 500); existing hotspots did
+      not grow, or the baseline budget dropped after extraction.
+- [ ] Tests follow the extracted boundary; characterisation tests added
+      before moving poorly covered behaviour.
+- [ ] `pnpm check:architecture` and `pnpm check` passed.
