@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { expect, test } from "vitest";
 import { createAcpAgentRegistry, withAcpVcsEnvironment } from "./acp-agent";
-import { createAgentRuntimeExecutor } from "./executor";
+import { createAgentRuntimeExecutor } from "../executor/executor";
 
 test("scoped launch preserves literal arguments and exit status", () => {
   const value = "Nyra ' \" $(echo should-not-run)";

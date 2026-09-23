@@ -5,6 +5,7 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Server as McpServer } from "@modelcontextprotocol/sdk/server/index.js";
@@ -683,11 +684,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function resolveDefaultShimPath(moduleUrl = import.meta.url): string {
-  const directory = path.dirname(fileURLToPath(moduleUrl));
-  const packageRoot = ["src", "dist"].includes(path.basename(directory))
-    ? path.dirname(directory)
-    : directory;
-  return path.join(packageRoot, "bin", "lapis-mcp-shim.mjs");
+  let directory = path.dirname(fileURLToPath(moduleUrl));
+  while (directory !== path.dirname(directory)) {
+    const candidate = path.join(directory, "bin", "lapis-mcp-shim.mjs");
+    if (existsSync(candidate)) return candidate;
+    directory = path.dirname(directory);
+  }
+  return path.join(directory, "bin", "lapis-mcp-shim.mjs");
 }
 
 function normalizeShimCommand(input: { command: string; args: string[] }): {

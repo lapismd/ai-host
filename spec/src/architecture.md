@@ -5,6 +5,9 @@ are volatile; durable, sanitized transcript ownership belongs to ai-controller.
 
 The package publishes built JavaScript and declarations for transport mechanics,
 a compatibility `./client` bridge and a vault-free `./file-tools` kernel.
+Production source lives under feature folders `protocol`, `acp`, `inventory`,
+`executor`, `mcp`, `ws`, and `file-tools`. `src/index.ts` and `src/client.ts`
+remain public entry facades.
 It has no operator executable or service lifecycle. The sibling AI Controller
 owns durable orchestration, the shared application SDK and standalone Deno CLI.
 Agent model discovery remains transport-owned. Public `listAcpModels`

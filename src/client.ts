@@ -11,8 +11,8 @@ import {
   type RuntimeEventFrame,
   type ToolCallFrame,
   type ToolCancelFrame,
-} from "./protocol";
-import type { ToolBridgeCall, ToolBridgeCancel } from "./tool-bridge";
+} from "./protocol/protocol";
+import type { ToolBridgeCall, ToolBridgeCancel } from "./mcp/tool-bridge";
 
 export type AgentRuntimeAttachConfig = {
   url: string;

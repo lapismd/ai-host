@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createAgentRuntimeExecutor } from "./executor";
-import { AUTH_CLOSE_CODE } from "./protocol";
+import { createAgentRuntimeExecutor } from "../executor/executor";
+import { AUTH_CLOSE_CODE } from "../protocol/protocol";
 import { startAgentRuntimeServer, type AgentRuntimeServer } from "./ws-server";
 
 const TOKEN = "test-token-value";

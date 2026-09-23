@@ -26,27 +26,9 @@ const FEATURES = new Set([
   "testing",
 ]);
 
-/** Filename owners while src/ is still flat (P0). Removed as files move in P1. */
+/** Residual root owners after the P1 feature-folder move. */
 export const FILE_LAYER = {
-  "src/protocol.ts": "protocol",
-  "src/replay-buffer.ts": "protocol",
-  "src/token.ts": "ws",
   "src/client.ts": "ws",
-  "src/ws-server.ts": "ws",
-  "src/serve.ts": "ws",
-  "src/executor.ts": "executor",
-  "src/volatile-session-store.ts": "executor",
-  "src/acp-agent.ts": "acp",
-  "src/acp-session-options.ts": "acp",
-  "src/acp-model-catalog.ts": "acp",
-  "src/acp-model-inventory.ts": "inventory",
-  "src/cursor-model-inventory.ts": "inventory",
-  "src/codex-model-inventory.ts": "inventory",
-  "src/opencode-model-inventory.ts": "inventory",
-  "src/inventory-process.ts": "inventory",
-  "src/tool-bridge.ts": "mcp",
-  "src/mcp-shim.ts": "mcp",
-  "src/mcp-shim-cli.ts": "mcp",
 };
 
 const COMPOSITION_FILES = new Set([

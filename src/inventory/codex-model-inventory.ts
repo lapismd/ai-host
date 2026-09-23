@@ -7,7 +7,7 @@ import {
 import {
   parseAcpThinkingValue,
   type AcpThinkingValue,
-} from "./acp-session-options";
+} from "../acp/acp-session-options";
 
 export type CodexListedModel = {
   id: string;

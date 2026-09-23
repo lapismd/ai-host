@@ -10,12 +10,12 @@ import {
   withAcpVcsEnvironment,
   type AcpAgentDefinition,
   type AcpAgentRegistry,
-} from "./acp-agent";
+} from "../acp/acp-agent";
 import type {
   NativeAgentProcessMessage,
   NativeAgentRuntimeEvent,
   UnsequencedAgentRuntimeEvent,
-} from "./protocol";
+} from "../protocol/protocol";
 import {
   ACP_THINKING_KEYS,
   advertisedCursorEffort,
@@ -25,19 +25,19 @@ import {
   vcsEnvironment,
   type AcpThinkingValue,
   type AcpxSessionOptions,
-} from "./acp-session-options";
+} from "../acp/acp-session-options";
 import {
   listAcpAgentInventory,
   mergeCursorAvailableModels,
-} from "./acp-model-inventory";
+} from "../inventory/acp-model-inventory";
 import {
   listCursorAvailableModelsViaAcp,
   type CursorListedModel,
-} from "./cursor-model-inventory";
+} from "../inventory/cursor-model-inventory";
 import {
   catalogEntriesForAgent,
   type AcpModelEntry,
-} from "./acp-model-catalog";
+} from "../acp/acp-model-catalog";
 import {
   ToolBridgeBroker,
   type ToolBridgeBrokerOptions,
@@ -46,7 +46,7 @@ import {
   type ToolBridgeOpenPayload,
   type ToolBridgeResponse,
   type ToolBridgeSink,
-} from "./tool-bridge";
+} from "../mcp/tool-bridge";
 
 export type AgentHostSink = {
   connectionId?: string;
@@ -158,7 +158,7 @@ export type AcpConfigureResult = {
   thinking?: AcpConfigurationFieldResult;
 };
 
-export type { AcpModelEntry } from "./acp-model-catalog";
+export type { AcpModelEntry } from "../acp/acp-model-catalog";
 
 type AcpRuntimeHandle = {
   sessionKey: string;

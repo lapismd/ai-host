@@ -8,6 +8,7 @@ export default defineConfig({
       "scripts/**/*.test.ts",
       "scripts/architecture.test.mjs",
     ],
+    exclude: ["scripts/architecture-fixtures/**"],
     pool: "forks",
   },
 });

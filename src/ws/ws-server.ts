@@ -1,6 +1,6 @@
 import { WebSocketServer, type WebSocket } from "ws";
 import { randomUUID } from "node:crypto";
-import type { AgentHostSink, AgentRuntimeExecutor } from "./executor";
+import type { AgentHostSink, AgentRuntimeExecutor } from "../executor/executor";
 import {
   AGENT_RUNTIME_PROTOCOL,
   AUTH_CLOSE_CODE,
@@ -9,8 +9,8 @@ import {
   isHelloRequest,
   type NativeAgentRuntimeEvent,
   type RuntimeReplayCursor,
-} from "./protocol";
-import { RuntimeEventReplayBuffer } from "./replay-buffer";
+} from "../protocol/protocol";
+import { RuntimeEventReplayBuffer } from "../protocol/replay-buffer";
 import { tokensEqual } from "./token";
 
 export type AgentRuntimeServerOptions = {

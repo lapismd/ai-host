@@ -98,12 +98,12 @@ export type ProcessMessageFrame = {
 
 export type ToolCallFrame = {
   type: "desktop_agent_tool_call";
-  event: import("./tool-bridge").ToolBridgeCall;
+  event: import("../mcp/tool-bridge").ToolBridgeCall;
 };
 
 export type ToolCancelFrame = {
   type: "desktop_agent_tool_cancel";
-  event: import("./tool-bridge").ToolBridgeCancel;
+  event: import("../mcp/tool-bridge").ToolBridgeCancel;
 };
 
 export function isHelloRequest(value: unknown): value is HelloRequest {

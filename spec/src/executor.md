@@ -3,7 +3,9 @@
 The executor adapts acpx, applies advertised session capabilities, and hosts
 the application-tool MCP shim. Cursor ACP advertises only HTTP and SSE MCP, so
 the broker also exposes Streamable HTTP `lapis-tools`. It keeps acpx types
-inside this package.
+inside this package. ACP session execution lives under `src/executor/`, agent
+registry and catalogs under `src/acp/`, model inventory under `src/inventory/`,
+and the MCP shim plus tool broker under `src/mcp/`.
 
 ## Requirements
 

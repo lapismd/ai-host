@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { catalogEntriesForAgent } from "./acp-model-catalog";
+import { catalogEntriesForAgent } from "../acp/acp-model-catalog";
 import {
   createAgentRuntimeExecutor,
   toAcpxMcpServers,

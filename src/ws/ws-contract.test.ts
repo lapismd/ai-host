@@ -1,5 +1,5 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { createAcpAgentRegistry } from "./acp-agent";
+import { createAcpAgentRegistry } from "../acp/acp-agent";
 import {
   getDefaultEnvironment,
   StdioClientTransport,
@@ -12,15 +12,15 @@ import {
   createAgentRuntimeBridge,
   maybeRegisterAgentRuntimeBridge,
   type AgentRuntimeBridge,
-} from "./client";
+} from "../client";
 import {
   createAgentRuntimeExecutor,
   type AcpModelCatalog,
   type AcpxRuntimeLike,
   type CreateAcpxRuntime,
-} from "./executor";
+} from "../executor/executor";
 import { serveAgentHost, type RunningAgentHost } from "./serve";
-import type { ToolBridgeBrokerOptions } from "./tool-bridge";
+import type { ToolBridgeBrokerOptions } from "../mcp/tool-bridge";
 
 function inventoryForAgent(agent: { id: string }): AcpModelCatalog {
   if (agent.id === "cursor") {
@@ -199,7 +199,7 @@ describe("agent-runtime websocket contract", () => {
         return baseRuntime(sink, sessionId, payload, pendingApprovals);
       },
       {
-        shimPath: new URL("./mcp-shim-cli.ts", import.meta.url).pathname,
+        shimPath: new URL("../mcp/mcp-shim-cli.ts", import.meta.url).pathname,
         shimArgsPrefix: ["--import", "tsx"],
       },
     );

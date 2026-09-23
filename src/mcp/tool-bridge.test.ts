@@ -65,7 +65,7 @@ describe("app tool stdio bridge", () => {
   });
 
   it("resolves the default shim from source and built package modules", () => {
-    const expected = new URL("../bin/lapis-mcp-shim.mjs", import.meta.url)
+    const expected = new URL("../../bin/lapis-mcp-shim.mjs", import.meta.url)
       .pathname;
     expect(
       resolveDefaultShimPath(new URL("./tool-bridge.ts", import.meta.url).href),

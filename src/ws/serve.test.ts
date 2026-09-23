@@ -2,7 +2,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createAgentRuntimeExecutor } from "./executor";
+import { createAgentRuntimeExecutor } from "../executor/executor";
 import { serveAgentHost, type RunningAgentHost } from "./serve";
 
 describe("serveAgentHost", () => {

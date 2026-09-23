@@ -55,20 +55,22 @@ export default defineConfig(tableRequirements(), {
           chapters: ["spec/src/cli.md"],
         },
         {
-          pattern: "^src/(?:serve|parse-cli|cli|token)\\.ts$",
-          chapters: ["spec/src/protocol.md"],
-        },
-        {
-          pattern: "^src/(?:ws-server|protocol|replay-buffer|client)\\.ts$",
+          pattern:
+            "^(?:src/(?:serve|parse-cli|cli|token)\\.ts$|src/ws/(?:serve|token)\\.ts$)",
           chapters: ["spec/src/protocol.md"],
         },
         {
           pattern:
-            "^src/(?:executor|acp-agent|acp-session-options|acp-model-catalog|acp-model-inventory|cursor-model-inventory|codex-model-inventory|opencode-model-inventory|inventory-process|volatile-session-store)\\.ts$",
+            "^(?:src/(?:ws-server|protocol|replay-buffer|client)\\.ts$|src/ws/ws-server\\.ts$|src/protocol/|src/client\\.ts$)",
+          chapters: ["spec/src/protocol.md"],
+        },
+        {
+          pattern:
+            "^(?:src/(?:executor|acp-agent|acp-session-options|acp-model-catalog|acp-model-inventory|cursor-model-inventory|codex-model-inventory|opencode-model-inventory|inventory-process|volatile-session-store)\\.ts$|src/(?:executor|acp|inventory)/)",
           chapters: ["spec/src/executor.md"],
         },
         {
-          pattern: "^src/(?:mcp-shim(?:-cli)?|tool-bridge)\\.ts$",
+          pattern: "^(?:src/(?:mcp-shim(?:-cli)?|tool-bridge)\\.ts$|src/mcp/)",
           chapters: ["spec/src/executor.md"],
         },
         {

@@ -2,7 +2,10 @@
 
 The compatibility transport speaks the existing agent-runtime WebSocket protocol.
 Embedding callers own process bind and token policy. The library MAY generate a token when
-callers omit one and retains its caller-controlled token output.
+callers omit one and retains its caller-controlled token output. Protocol types and
+the replay buffer live under `src/protocol/`. The WebSocket host, serve entry, and
+token helpers live under `src/ws/`. The public `./client` facade remains
+`src/client.ts`.
 
 ACP permission requests remain security decisions. General conversational
 questions continue as normal assistant text and a later user message starts a

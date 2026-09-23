@@ -7,13 +7,13 @@ export {
   type AcpAgentDefinition,
   type AcpAgentMcpTransport,
   type AcpAgentRegistry,
-} from "./acp-agent";
+} from "./acp/acp-agent";
 export {
   toAcpxSessionOptions,
   toAcpxThinkingValue,
   type AcpStartSessionFields,
   type AcpxSessionOptions,
-} from "./acp-session-options";
+} from "./acp/acp-session-options";
 export {
   ACP_MODEL_CATALOG_UNAVAILABLE,
   createAgentRuntimeExecutor,
@@ -35,7 +35,7 @@ export {
   type CreateAcpxRuntime,
   type CreateAcpxRuntimeContext,
   type SpawnPayload,
-} from "./executor";
+} from "./executor/executor";
 export {
   AGENT_RUNTIME_COMMANDS,
   AGENT_RUNTIME_PROTOCOL,
@@ -49,16 +49,16 @@ export {
   type RuntimeReplayCursor,
   type RuntimeReplaySubscription,
   type UnsequencedAgentRuntimeEvent,
-} from "./protocol";
-export { RuntimeEventReplayBuffer } from "./replay-buffer";
-export { runMcpShim } from "./mcp-shim";
-export { serveAgentHost, type RunningAgentHost, type ServeArgs } from "./serve";
-export { generateToken, isLoopbackBind, tokensEqual } from "./token";
+} from "./protocol/protocol";
+export { RuntimeEventReplayBuffer } from "./protocol/replay-buffer";
+export { runMcpShim } from "./mcp/mcp-shim";
+export { serveAgentHost, type RunningAgentHost, type ServeArgs } from "./ws/serve";
+export { generateToken, isLoopbackBind, tokensEqual } from "./ws/token";
 export {
   startAgentRuntimeServer,
   type AgentRuntimeServer,
   type AgentRuntimeServerOptions,
-} from "./ws-server";
+} from "./ws/ws-server";
 export {
   ToolBridgeBroker,
   type ToolBridgeBrokerOptions,
@@ -70,4 +70,4 @@ export {
   type ToolBridgeHttpContribution,
   type ToolBridgeServerContribution,
   type ToolBridgeSink,
-} from "./tool-bridge";
+} from "./mcp/tool-bridge";

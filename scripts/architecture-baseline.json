@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "sourceCommit": "3e27a09eded9216724e6f42d4178228e2ba13ef5",
+  "sourceCommit": "6e0ee8d207f7066fcdfaeaa8db5ff99d9fad6cbd",
   "limits": {
     "newProductionCountedLines": 300,
     "newTestCountedLines": 500,
@@ -30,8 +30,8 @@
       "forbiddenImportCount": 0
     },
     "scripts/architecture-policy.mjs": {
-      "countedLines": 177,
-      "physicalLines": 208,
+      "countedLines": 159,
+      "physicalLines": 190,
       "forbiddenImportCount": 0
     },
     "scripts/architecture-scan.mjs": {
@@ -74,47 +74,37 @@
       "physicalLines": 15,
       "forbiddenImportCount": 0
     },
-    "src/acp-agent.test.ts": {
+    "src/acp/acp-agent.test.ts": {
       "countedLines": 119,
       "physicalLines": 124,
       "forbiddenImportCount": 0
     },
-    "src/acp-agent.ts": {
+    "src/acp/acp-agent.ts": {
       "countedLines": 213,
       "physicalLines": 229,
       "forbiddenImportCount": 0
     },
-    "src/acp-model-catalog.test.ts": {
+    "src/acp/acp-model-catalog.test.ts": {
       "countedLines": 49,
       "physicalLines": 51,
       "forbiddenImportCount": 0
     },
-    "src/acp-model-catalog.ts": {
+    "src/acp/acp-model-catalog.ts": {
       "countedLines": 79,
       "physicalLines": 85,
       "forbiddenImportCount": 0
     },
-    "src/acp-model-inventory.test.ts": {
-      "countedLines": 273,
-      "physicalLines": 283,
-      "forbiddenImportCount": 0
-    },
-    "src/acp-model-inventory.ts": {
-      "countedLines": 228,
-      "physicalLines": 240,
-      "forbiddenImportCount": 0
-    },
-    "src/acp-session-options.test.ts": {
+    "src/acp/acp-session-options.test.ts": {
       "countedLines": 158,
       "physicalLines": 168,
       "forbiddenImportCount": 0
     },
-    "src/acp-session-options.ts": {
+    "src/acp/acp-session-options.ts": {
       "countedLines": 151,
       "physicalLines": 167,
       "forbiddenImportCount": 0
     },
-    "src/acp-vcs-launch.test.ts": {
+    "src/acp/acp-vcs-launch.test.ts": {
       "countedLines": 66,
       "physicalLines": 68,
       "forbiddenImportCount": 0
@@ -126,54 +116,44 @@
       "kind": "legacy",
       "justification": "Public ./client attach bridge; extract handshake and event fan-out before adding behaviour"
     },
-    "src/codex-model-inventory.test.ts": {
-      "countedLines": 106,
-      "physicalLines": 114,
-      "forbiddenImportCount": 0
-    },
-    "src/codex-model-inventory.ts": {
-      "countedLines": 190,
-      "physicalLines": 208,
-      "forbiddenImportCount": 0
-    },
-    "src/cursor-model-inventory.test.ts": {
-      "countedLines": 150,
-      "physicalLines": 160,
-      "forbiddenImportCount": 0
-    },
-    "src/cursor-model-inventory.ts": {
-      "countedLines": 250,
-      "physicalLines": 269,
-      "forbiddenImportCount": 0
-    },
-    "src/executor.capture.test.ts": {
+    "src/executor/executor.capture.test.ts": {
       "countedLines": 23,
       "physicalLines": 24,
       "forbiddenImportCount": 0
     },
-    "src/executor.permissions.test.ts": {
+    "src/executor/executor.permissions.test.ts": {
       "countedLines": 154,
       "physicalLines": 161,
       "forbiddenImportCount": 0
     },
-    "src/executor.restricted.test.ts": {
+    "src/executor/executor.restricted.test.ts": {
       "countedLines": 69,
       "physicalLines": 76,
       "forbiddenImportCount": 0
     },
-    "src/executor.test.ts": {
+    "src/executor/executor.test.ts": {
       "countedLines": 1020,
       "physicalLines": 1093,
       "forbiddenImportCount": 0,
       "kind": "legacy",
       "justification": "Executor suite; split with the extracted production boundary"
     },
-    "src/executor.ts": {
+    "src/executor/executor.ts": {
       "countedLines": 1539,
       "physicalLines": 1620,
       "forbiddenImportCount": 0,
       "kind": "legacy",
-      "justification": "ACP runtime orchestrator; extract catalog, session, MCP projection, permissions, and default runtime before adding behaviour"
+      "justification": "ACP runtime facade; extract the responsibility you are changing"
+    },
+    "src/executor/volatile-session-store.test.ts": {
+      "countedLines": 25,
+      "physicalLines": 26,
+      "forbiddenImportCount": 0
+    },
+    "src/executor/volatile-session-store.ts": {
+      "countedLines": 23,
+      "physicalLines": 25,
+      "forbiddenImportCount": 0
     },
     "src/file-tools/aliases.ts": {
       "countedLines": 78,
@@ -220,106 +200,126 @@
       "physicalLines": 92,
       "forbiddenImportCount": 0
     },
-    "src/handshake.test.ts": {
-      "countedLines": 87,
-      "physicalLines": 96,
-      "forbiddenImportCount": 0
-    },
     "src/index.ts": {
       "countedLines": 73,
       "physicalLines": 73,
       "forbiddenImportCount": 0
     },
-    "src/inventory-process.ts": {
+    "src/inventory/acp-model-inventory.test.ts": {
+      "countedLines": 273,
+      "physicalLines": 283,
+      "forbiddenImportCount": 0
+    },
+    "src/inventory/acp-model-inventory.ts": {
+      "countedLines": 228,
+      "physicalLines": 240,
+      "forbiddenImportCount": 0
+    },
+    "src/inventory/codex-model-inventory.test.ts": {
+      "countedLines": 106,
+      "physicalLines": 114,
+      "forbiddenImportCount": 0
+    },
+    "src/inventory/codex-model-inventory.ts": {
+      "countedLines": 190,
+      "physicalLines": 208,
+      "forbiddenImportCount": 0
+    },
+    "src/inventory/cursor-model-inventory.test.ts": {
+      "countedLines": 150,
+      "physicalLines": 160,
+      "forbiddenImportCount": 0
+    },
+    "src/inventory/cursor-model-inventory.ts": {
+      "countedLines": 250,
+      "physicalLines": 269,
+      "forbiddenImportCount": 0
+    },
+    "src/inventory/inventory-process.ts": {
       "countedLines": 85,
       "physicalLines": 92,
       "forbiddenImportCount": 0
     },
-    "src/mcp-shim-cli.ts": {
-      "countedLines": 7,
-      "physicalLines": 8,
-      "forbiddenImportCount": 0
-    },
-    "src/mcp-shim.ts": {
-      "countedLines": 182,
-      "physicalLines": 195,
-      "forbiddenImportCount": 0
-    },
-    "src/opencode-model-inventory.test.ts": {
+    "src/inventory/opencode-model-inventory.test.ts": {
       "countedLines": 128,
       "physicalLines": 136,
       "forbiddenImportCount": 0
     },
-    "src/opencode-model-inventory.ts": {
+    "src/inventory/opencode-model-inventory.ts": {
       "countedLines": 144,
       "physicalLines": 154,
       "forbiddenImportCount": 0
     },
-    "src/protocol.ts": {
-      "countedLines": 105,
-      "physicalLines": 123,
-      "forbiddenImportCount": 1
-    },
-    "src/replay-buffer.test.ts": {
-      "countedLines": 58,
-      "physicalLines": 64,
+    "src/mcp/mcp-shim-cli.ts": {
+      "countedLines": 7,
+      "physicalLines": 8,
       "forbiddenImportCount": 0
     },
-    "src/replay-buffer.ts": {
-      "countedLines": 81,
-      "physicalLines": 88,
+    "src/mcp/mcp-shim.ts": {
+      "countedLines": 182,
+      "physicalLines": 195,
       "forbiddenImportCount": 0
     },
-    "src/serve.test.ts": {
-      "countedLines": 62,
-      "physicalLines": 66,
-      "forbiddenImportCount": 0
-    },
-    "src/serve.ts": {
-      "countedLines": 84,
-      "physicalLines": 90,
-      "forbiddenImportCount": 0
-    },
-    "src/token.test.ts": {
-      "countedLines": 17,
-      "physicalLines": 19,
-      "forbiddenImportCount": 0
-    },
-    "src/token.ts": {
-      "countedLines": 16,
-      "physicalLines": 19,
-      "forbiddenImportCount": 0
-    },
-    "src/tool-bridge.test.ts": {
+    "src/mcp/tool-bridge.test.ts": {
       "countedLines": 314,
       "physicalLines": 329,
       "forbiddenImportCount": 0
     },
-    "src/tool-bridge.ts": {
-      "countedLines": 661,
-      "physicalLines": 703,
+    "src/mcp/tool-bridge.ts": {
+      "countedLines": 664,
+      "physicalLines": 706,
       "forbiddenImportCount": 0,
       "kind": "legacy",
       "justification": "MCP broker; split types, HTTP/WebSocket contributions, and shim resolution before adding behaviour"
     },
-    "src/volatile-session-store.test.ts": {
-      "countedLines": 25,
-      "physicalLines": 26,
+    "src/protocol/protocol.ts": {
+      "countedLines": 105,
+      "physicalLines": 123,
+      "forbiddenImportCount": 1
+    },
+    "src/protocol/replay-buffer.test.ts": {
+      "countedLines": 58,
+      "physicalLines": 64,
       "forbiddenImportCount": 0
     },
-    "src/volatile-session-store.ts": {
-      "countedLines": 23,
-      "physicalLines": 25,
+    "src/protocol/replay-buffer.ts": {
+      "countedLines": 81,
+      "physicalLines": 88,
       "forbiddenImportCount": 0
     },
-    "src/ws-contract.test.ts": {
+    "src/ws/handshake.test.ts": {
+      "countedLines": 87,
+      "physicalLines": 96,
+      "forbiddenImportCount": 0
+    },
+    "src/ws/serve.test.ts": {
+      "countedLines": 62,
+      "physicalLines": 66,
+      "forbiddenImportCount": 0
+    },
+    "src/ws/serve.ts": {
+      "countedLines": 84,
+      "physicalLines": 91,
+      "forbiddenImportCount": 0
+    },
+    "src/ws/token.test.ts": {
+      "countedLines": 17,
+      "physicalLines": 19,
+      "forbiddenImportCount": 0
+    },
+    "src/ws/token.ts": {
+      "countedLines": 16,
+      "physicalLines": 19,
+      "forbiddenImportCount": 0
+    },
+    "src/ws/ws-contract.test.ts": {
       "countedLines": 667,
       "physicalLines": 702,
       "forbiddenImportCount": 0,
       "kind": "legacy",
       "justification": "WebSocket contract suite; split with extracted host surfaces"
     },
-    "src/ws-server.ts": {
+    "src/ws/ws-server.ts": {
       "countedLines": 389,
       "physicalLines": 415,
       "forbiddenImportCount": 0,

@@ -1,7 +1,7 @@
 import {
   parseAcpThinkingValue,
   type AcpThinkingValue,
-} from "./acp-session-options";
+} from "../acp/acp-session-options";
 import {
   MODEL_INVENTORY_TIMEOUT_MS,
   startInventoryProcess,

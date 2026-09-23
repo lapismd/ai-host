@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createAcpAgentRegistry } from "./acp-agent";
+import { createAcpAgentRegistry } from "../acp/acp-agent";
 import {
   catalogFromListedModels,
   listAcpAgentInventory,

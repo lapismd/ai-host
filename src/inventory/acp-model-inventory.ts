@@ -1,20 +1,20 @@
 import {
   resolveAcpAgentCommand,
   type AcpAgentDefinition,
-} from "./acp-agent";
-import { normalizeAcpModelEntry } from "./acp-model-catalog";
+} from "../acp/acp-agent";
+import { normalizeAcpModelEntry } from "../acp/acp-model-catalog";
 import {
   ACP_THINKING_NAMES,
   stripCursorModelId,
   type AcpThinkingValue,
-} from "./acp-session-options";
+} from "../acp/acp-session-options";
 import { listCodexAppServerModels } from "./codex-model-inventory";
 import {
   parseCursorListModelsOutput,
   type CursorListedModel,
 } from "./cursor-model-inventory";
 import { listOpenCodeServerModels } from "./opencode-model-inventory";
-import type { AcpConfigOption, AcpModelCatalog } from "./executor";
+import type { AcpConfigOption, AcpModelCatalog } from "../executor/executor";
 import {
   commandArgv,
   runInventoryCommand,

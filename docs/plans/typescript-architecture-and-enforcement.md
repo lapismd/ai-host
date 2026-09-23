@@ -1,6 +1,7 @@
 # TypeScript architecture and enforcement
 
-**Status:** P0 in progress. Canonical requirements live in `spec/src`.
+**Status:** P0 landed. P1 folders landed. P2 extraction remains. Canonical
+requirements live in `spec/src`.
 
 **Kind of statements:** **Fact** is observed in this checkout. **Recommendation**
 is a chosen policy. Organisation plans under `docs/plans/` are not canonical.
