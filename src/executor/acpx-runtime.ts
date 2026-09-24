@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,12 +8,8 @@ import {
 } from "../acp/acp-agent";
 import { vcsEnvironment } from "../acp/acp-session-options";
 import { toAcpxMcpServers } from "./mcp-servers";
-import {
-  clearPendingApprovalTimers,
-  permissionOptionOutcomes,
-} from "./permissions";
+import { requestAcpPermission, type AcpxPermissionRequest } from "./permission-request";
 import type {
-  AcpPermissionDecision,
   AcpStartPayload,
   AgentRuntimeInputSink,
   CreateAcpxRuntimeContext,
@@ -74,75 +69,8 @@ export async function defaultCreateAcpxRuntime(
       agentRegistry: registry,
       mcpServers: toAcpxMcpServers(payload.mcpServers),
       permissionMode: "deny-all",
-      onPermissionRequest: async (
-        request: {
-          sessionId?: string;
-          inferredKind?: string;
-          raw?: Record<string, unknown>;
-        },
-        requestContext?: { signal?: AbortSignal },
-      ) => {
-        if (payload.restricted) return { outcome: "reject_once" };
-        const raw = request.raw ?? {};
-        const toolCall =
-          raw.toolCall && typeof raw.toolCall === "object"
-            ? (raw.toolCall as Record<string, unknown>)
-            : {};
-        const requestId = String(
-          toolCall.toolCallId ??
-            raw.toolCallId ??
-            request.sessionId ??
-            randomUUID(),
-        );
-        const key = `${sessionId}:${requestId}`;
-        if (pendingApprovals.has(key)) {
-          return { outcome: "reject_once" };
-        }
-        const options = permissionOptionOutcomes(raw.options);
-        if (options.length === 0 || new Set(options).size !== options.length) {
-          return { outcome: "reject_once" };
-        }
-        const expiresAt = Date.now() + context.permissionTimeoutMs;
-        sink.sendRuntimeEvent({
-          sessionId,
-          type: "permission",
-          request: {
-            requestId,
-            id: requestId,
-            sessionId: request.sessionId,
-            inferredKind: request.inferredKind,
-            raw,
-            kind: request.inferredKind ?? toolCall.kind,
-            title: toolCall.title,
-            toolName: toolCall.title ?? toolCall.kind,
-            input: toolCall.rawInput,
-            options: raw.options,
-            expiresAt,
-          },
-        });
-        return new Promise<AcpPermissionDecision>((resolve) => {
-          const pending = ((decision: AcpPermissionDecision) => {
-            clearPendingApprovalTimers(pending);
-            resolve(decision);
-          }) as PendingAcpApproval;
-          pending.connectionId = context.connectionId;
-          pending.expiresAt = expiresAt;
-          pending.options = options;
-          pending.timeout = setTimeout(() => {
-            if (!pendingApprovals.delete(key)) return;
-            pending({ outcome: "reject_once" });
-          }, context.permissionTimeoutMs);
-          requestContext?.signal?.addEventListener(
-            "abort",
-            () => {
-              if (!pendingApprovals.delete(key)) return;
-              pending({ outcome: "reject_once" });
-            },
-            { once: true },
-          );
-          pendingApprovals.set(key, pending);
-        });
-      },
+      onPermissionRequest: (request: AcpxPermissionRequest, requestContext?: { signal?: AbortSignal }) =>
+        requestAcpPermission(sink, sessionId, payload, pendingApprovals, context, request, requestContext?.signal),
     });
   } catch (error) {
     sessionStore.dispose();

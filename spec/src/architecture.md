@@ -78,3 +78,8 @@ Session status exposes permission-mode application separately from a requested m
 The executor retains deadline checks at the execution boundary; the controller
 owns the provider-independent approval policy. The affected modules remain below
 the 300-counted-line limit.
+
+ACP permission registration and settlement live in `permission-request.ts`.
+The callback registers before notification and clears timers and abort listeners
+before publishing one terminal update. This keeps runtime creation separate from
+interaction lifetime, including synchronous consumers.

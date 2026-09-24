@@ -115,8 +115,8 @@
       "forbiddenImportCount": 0
     },
     "src/executor/acpx-runtime.ts": {
-      "countedLines": 173,
-      "physicalLines": 174,
+      "countedLines": 101,
+      "physicalLines": 102,
       "forbiddenImportCount": 0
     },
     "src/executor/catalog-commands.ts": {

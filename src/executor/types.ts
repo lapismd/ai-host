@@ -181,7 +181,7 @@ export type AcpxRuntimeLike = {
   }): Promise<void>;
 };
 
-export type PendingAcpApproval = ((decision: AcpPermissionDecision) => void) & {
+export type PendingAcpApproval = ((decision: AcpPermissionDecision, state?: "resolved" | "expired" | "cancelled") => void) & {
   connectionId?: string;
   disconnectTimer?: ReturnType<typeof setTimeout>;
   expiresAt?: number;

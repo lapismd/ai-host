@@ -41,7 +41,7 @@ export function createToolCommands(
         approval.disconnectTimer = setTimeout(() => {
           if (!state.pendingApprovals.delete(key)) return;
           clearPendingApprovalTimers(approval);
-          approval({ outcome: "reject_once" });
+          approval({ outcome: "reject_once" }, "cancelled");
         }, state.disconnectGraceMs);
       }
     },

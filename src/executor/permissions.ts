@@ -57,7 +57,7 @@ export function settlePendingPermissions(
     if (prefix !== undefined && !key.startsWith(prefix)) continue;
     approvals.delete(key);
     clearPendingApprovalTimers(approval);
-    approval(decision);
+    approval(decision, "cancelled");
   }
 }
 

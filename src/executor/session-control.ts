@@ -110,7 +110,7 @@ export function createSessionControlCommands(
       if (resolve.expiresAt !== undefined && resolve.expiresAt <= Date.now()) {
         state.pendingApprovals.delete(key);
         clearPendingApprovalTimers(resolve);
-        resolve({ outcome: "cancel" });
+        resolve({ outcome: "cancel" }, "expired");
         throw new Error("ACP approval expired");
       }
       const normalized = normalizePermissionDecision(decision, resolve.options);
