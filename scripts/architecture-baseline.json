@@ -135,8 +135,8 @@
       "forbiddenImportCount": 0
     },
     "src/executor/executor.permissions.test.ts": {
-      "countedLines": 154,
-      "physicalLines": 161,
+      "countedLines": 166,
+      "physicalLines": 174,
       "forbiddenImportCount": 0
     },
     "src/executor/executor.restricted.test.ts": {
@@ -177,8 +177,8 @@
       "forbiddenImportCount": 0
     },
     "src/executor/session-control.ts": {
-      "countedLines": 110,
-      "physicalLines": 115,
+      "countedLines": 117,
+      "physicalLines": 122,
       "forbiddenImportCount": 0
     },
     "src/executor/session-lifecycle.ts": {
@@ -212,8 +212,8 @@
       "forbiddenImportCount": 0
     },
     "src/executor/types.ts": {
-      "countedLines": 266,
-      "physicalLines": 291,
+      "countedLines": 268,
+      "physicalLines": 293,
       "forbiddenImportCount": 0
     },
     "src/executor/volatile-session-store.test.ts": {

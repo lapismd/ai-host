@@ -124,8 +124,20 @@ function inertRuntime(): CreateAcpxRuntime {
   });
 }
 
+it("rejects expired approvals even before the timeout callback runs", async () => {
+  const decisions: AcpPermissionDecision[] = [];
+  const executor = createAgentRuntimeExecutor({ createAcpxRuntime: pendingPermissionRuntime(decisions, Date.now() - 1) });
+  await executor.startAcpSession(sink, { sessionId: "expired", agent: "codex" });
+  await executor.promptAcpSession(sink, "expired", "work");
+  await vi.waitFor(() => expect(executor.getAcpSessionStatus("expired").pendingPermissions).toHaveLength(1));
+  expect(() => executor.respondAcpSession("expired", "permission-1", "allow_once")).toThrow(/expired/i);
+  expect(decisions).toEqual([{ outcome: "cancel" }]);
+  await executor.close();
+});
+
 function pendingPermissionRuntime(
   decisions: AcpPermissionDecision[],
+  expiresAt?: number,
 ): CreateAcpxRuntime {
   return async (runtimeSink, sessionId, _payload, pending, context) => ({
     async ensureSession(input) {
@@ -142,6 +154,7 @@ function pendingPermissionRuntime(
             decisions.push(decision);
             finish();
           }) as Parameters<typeof pending.set>[1];
+          approval.expiresAt = expiresAt;
           approval.options = ["allow_once", "reject_once"];
           approval.connectionId = context.connectionId;
           pending.set(`${sessionId}:permission-1`, approval);

@@ -97,6 +97,7 @@ export type AcpAgentCatalogEntry = {
 };
 
 export type AcpSessionStatus = {
+  permissionMode?: import("./session-startup-config").PermissionModeResult;
   sessionId: string;
   state: "initializing" | "idle" | "running" | "missing";
   runId?: string;
@@ -265,6 +266,7 @@ export type ListCursorAvailableModels = (input: {
   workspace?: string;
 }) => Promise<CursorListedModel[]>;
 export type AcpSessionState = {
+  permissionMode?: import("./session-startup-config").PermissionModeResult;
   sessionId: string;
   runtime: AcpxRuntimeLike;
   handle: AcpRuntimeHandle;

@@ -73,3 +73,8 @@ advertised harness permission mode, lives in `session-startup-config.ts`, and
 the `session-lifecycle.ts` budget records that extraction. `src/file-tools` must not import MCP, executor, or
 WebSocket transport. Organisation plans under `docs/plans/` are not canonical
 requirements.
+
+Session status exposes permission-mode application separately from a requested mode.
+The executor retains deadline checks at the execution boundary; the controller
+owns the provider-independent approval policy. The affected modules remain below
+the 300-counted-line limit.

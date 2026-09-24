@@ -129,7 +129,7 @@ export async function initializeAcpSession(
       agent: agent.id,
     }),
   });
-  await applyStartupConfiguration({
+  session.permissionMode = await applyStartupConfiguration({
     runtime,
     handle,
     payload: effectivePayload,

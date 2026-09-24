@@ -44,6 +44,7 @@ export function createSessionControlCommands(
       }
       return {
         sessionId,
+        ...(session.permissionMode ? { permissionMode: session.permissionMode } : {}),
         state: pending ? "initializing" : session.running ? "running" : "idle",
         ...(session.currentRunId !== "session"
           ? { runId: session.currentRunId }
@@ -106,6 +107,12 @@ export function createSessionControlCommands(
       const key = `${sessionId}:${requestId}`;
       const resolve = state.pendingApprovals.get(key);
       if (!resolve) throw new Error(`Unknown ACP approval: ${key}`);
+      if (resolve.expiresAt !== undefined && resolve.expiresAt <= Date.now()) {
+        state.pendingApprovals.delete(key);
+        clearPendingApprovalTimers(resolve);
+        resolve({ outcome: "cancel" });
+        throw new Error("ACP approval expired");
+      }
       const normalized = normalizePermissionDecision(decision, resolve.options);
       state.pendingApprovals.delete(key);
       clearPendingApprovalTimers(resolve);

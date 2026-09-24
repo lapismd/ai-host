@@ -41,6 +41,7 @@ describe("harness permission mode", () => {
       handle: expect.any(Object),
       mode: "bypassPermissions",
     });
+    expect(executor.getAcpSessionStatus(started.sessionId).permissionMode).toEqual({ requested: "bypassPermissions", status: "applied", effective: "bypassPermissions" });
     await executor.closeAcpSession(started.sessionId);
 
     const hidden = runtimeWith(["model"]);
@@ -52,6 +53,7 @@ describe("harness permission mode", () => {
       permissionMode: "bypassPermissions",
     });
     expect(hidden.setMode).not.toHaveBeenCalled();
+    expect(asking.getAcpSessionStatus(session.sessionId).permissionMode).toEqual({ requested: "bypassPermissions", status: "unsupported" });
     await asking.closeAcpSession(session.sessionId);
   });
 
@@ -70,6 +72,7 @@ describe("harness permission mode", () => {
       permissionMode: "bypassPermissions",
     });
     expect(started.sessionId).toBeTruthy();
+    expect(executor.getAcpSessionStatus(started.sessionId).permissionMode).toEqual({ requested: "bypassPermissions", status: "rejected" });
     await executor.closeAcpSession(started.sessionId);
   });
 });

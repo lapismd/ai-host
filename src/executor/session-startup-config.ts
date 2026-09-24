@@ -16,13 +16,19 @@ type StartupRuntime = Pick<
   setMode?(input: { handle: AcpRuntimeHandle; mode: string }): Promise<void>;
 };
 
+export interface PermissionModeResult {
+  requested: string;
+  status: "applied" | "unsupported" | "rejected";
+  effective?: string;
+}
+
 export async function applyStartupConfiguration(input: {
   runtime: StartupRuntime;
   handle: AcpRuntimeHandle;
   payload: AcpStartPayload;
   agentId: string;
   resumeSessionId?: string;
-}): Promise<void> {
+}): Promise<PermissionModeResult | undefined> {
   const { runtime, handle, payload, agentId } = input;
   const thinking = toAcpxThinkingValue({
     agent: agentId,
@@ -56,20 +62,24 @@ export async function applyStartupConfiguration(input: {
       throw error;
     }
   }
-  await applyAdvertisedPermissionMode(runtime, handle, payload.permissionMode);
+  if (payload.restricted && payload.permissionMode) return { requested: payload.permissionMode, status: "unsupported" };
+  return applyAdvertisedPermissionMode(runtime, handle, payload.permissionMode);
 }
 
 async function applyAdvertisedPermissionMode(
   runtime: StartupRuntime,
   handle: AcpRuntimeHandle,
   mode: string | undefined,
-): Promise<void> {
-  if (!mode || !runtime.setMode || !runtime.getCapabilities) return;
-  const capabilities = await runtime.getCapabilities({ handle });
-  if (!(capabilities.configOptionKeys ?? []).includes("mode")) return;
+): Promise<PermissionModeResult | undefined> {
+  if (!mode) return;
+  const result = { requested: mode, status: "unsupported" as const };
+  if (!runtime.setMode || !runtime.getCapabilities) return result;
   try {
+    const capabilities = await runtime.getCapabilities({ handle });
+    if (!(capabilities.configOptionKeys ?? []).includes("mode")) return result;
     await runtime.setMode({ handle, mode });
+    return { requested: mode, status: "applied", effective: mode };
   } catch {
-    // A rejected harness mode leaves owner permission prompts in place.
+    return { requested: mode, status: "rejected" };
   }
 }
