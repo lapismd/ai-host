@@ -83,3 +83,10 @@ ACP permission registration and settlement live in `permission-request.ts`.
 The callback registers before notification and clears timers and abort listeners
 before publishing one terminal update. This keeps runtime creation separate from
 interaction lifetime, including synchronous consumers.
+
+## Owned worker resource snapshots
+
+The executor records process roots through acpx lifecycle callbacks. A read-only
+snapshot counts each owned root and descendant once, without starting ACP or
+reading session contents. Callers receive an explicit partial or unavailable
+status when RSS cannot be measured.

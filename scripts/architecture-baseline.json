@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "sourceCommit": "9a603133d563344e29a40da593787c1b1cdfd4aa",
+  "sourceCommit": "362f896b00115f6389c45899ec403146bd5bd9c6",
   "limits": {
     "newProductionCountedLines": 300,
     "newTestCountedLines": 500,
@@ -115,8 +115,8 @@
       "forbiddenImportCount": 0
     },
     "src/executor/acpx-runtime.ts": {
-      "countedLines": 101,
-      "physicalLines": 102,
+      "countedLines": 105,
+      "physicalLines": 106,
       "forbiddenImportCount": 0
     },
     "src/executor/catalog-commands.ts": {
@@ -152,13 +152,23 @@
       "justification": "Executor suite; split with the extracted production boundary"
     },
     "src/executor/executor.ts": {
-      "countedLines": 102,
-      "physicalLines": 104,
+      "countedLines": 114,
+      "physicalLines": 116,
       "forbiddenImportCount": 0
     },
     "src/executor/mcp-servers.ts": {
       "countedLines": 117,
       "physicalLines": 125,
+      "forbiddenImportCount": 0
+    },
+    "src/executor/permission-lifecycle.test.ts": {
+      "countedLines": 47,
+      "physicalLines": 50,
+      "forbiddenImportCount": 0
+    },
+    "src/executor/permission-request.ts": {
+      "countedLines": 48,
+      "physicalLines": 50,
       "forbiddenImportCount": 0
     },
     "src/executor/permissions.ts": {
@@ -182,8 +192,13 @@
       "forbiddenImportCount": 0
     },
     "src/executor/session-lifecycle.ts": {
-      "countedLines": 265,
-      "physicalLines": 269,
+      "countedLines": 267,
+      "physicalLines": 271,
+      "forbiddenImportCount": 0
+    },
+    "src/executor/session-permission-mode.test.ts": {
+      "countedLines": 73,
+      "physicalLines": 78,
       "forbiddenImportCount": 0
     },
     "src/executor/session-prompt.ts": {
@@ -196,14 +211,19 @@
       "physicalLines": 92,
       "forbiddenImportCount": 0
     },
+    "src/executor/session-startup-config.ts": {
+      "countedLines": 81,
+      "physicalLines": 85,
+      "forbiddenImportCount": 0
+    },
     "src/executor/session.ts": {
       "countedLines": 88,
       "physicalLines": 94,
       "forbiddenImportCount": 0
     },
     "src/executor/state.ts": {
-      "countedLines": 29,
-      "physicalLines": 30,
+      "countedLines": 31,
+      "physicalLines": 32,
       "forbiddenImportCount": 0
     },
     "src/executor/tool-commands.ts": {
@@ -212,8 +232,8 @@
       "forbiddenImportCount": 0
     },
     "src/executor/types.ts": {
-      "countedLines": 268,
-      "physicalLines": 293,
+      "countedLines": 271,
+      "physicalLines": 296,
       "forbiddenImportCount": 0
     },
     "src/executor/volatile-session-store.test.ts": {
@@ -224,6 +244,16 @@
     "src/executor/volatile-session-store.ts": {
       "countedLines": 23,
       "physicalLines": 25,
+      "forbiddenImportCount": 0
+    },
+    "src/executor/worker-resources.test.ts": {
+      "countedLines": 35,
+      "physicalLines": 37,
+      "forbiddenImportCount": 0
+    },
+    "src/executor/worker-resources.ts": {
+      "countedLines": 90,
+      "physicalLines": 99,
       "forbiddenImportCount": 0
     },
     "src/file-tools/aliases.ts": {
@@ -272,8 +302,8 @@
       "forbiddenImportCount": 0
     },
     "src/index.ts": {
-      "countedLines": 73,
-      "physicalLines": 73,
+      "countedLines": 74,
+      "physicalLines": 74,
       "forbiddenImportCount": 0
     },
     "src/inventory/acp-model-inventory.test.ts": {

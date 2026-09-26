@@ -1,4 +1,5 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import type { WorkerProcessRegistry } from "./worker-resources";
 import type { AcpAgentRegistry } from "../acp/acp-agent";
 import type { ToolBridgeBroker } from "../mcp/tool-bridge";
 import type {
@@ -27,4 +28,5 @@ export type ExecutorState = {
   permissionTimeoutMs: number;
   disconnectGraceMs: number;
   toolBridges: ToolBridgeBroker;
+  workerProcesses: WorkerProcessRegistry;
 };

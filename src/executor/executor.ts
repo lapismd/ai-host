@@ -15,6 +15,7 @@ import { createSessionPromptCommands } from "./session-prompt";
 import { createSessionStartCommands } from "./session-start";
 import type { ExecutorState } from "./state";
 import { createToolCommands } from "./tool-commands";
+import { WorkerProcessRegistry } from "./worker-resources";
 import type {
   AgentRuntimeExecutor,
   CreateAcpxRuntime,
@@ -66,6 +67,7 @@ export function createAgentRuntimeExecutor(options?: {
     acpSessions: new Map(),
     pendingAcpSessions: new Map(),
     pendingApprovals: new Map(),
+    workerProcesses: new WorkerProcessRegistry(),
     lastGoodCatalogs: new Map(),
     catalogRefresh: new Map(),
     cursorEnrichment: new Map(),
@@ -100,5 +102,15 @@ export function createAgentRuntimeExecutor(options?: {
     ...createSessionConfigureCommands(state),
     ...createSessionControlCommands(state),
     ...createToolCommands(state),
+    snapshotAcpResources: async () => state.workerProcesses.snapshot(
+      [...state.acpSessions.values(), ...state.pendingAcpSessions.values()]
+        .map((entry) => "session" in entry ? entry.session : entry)
+        .map((session) => ({
+          sessionId: session.sessionId,
+          state: state.pendingAcpSessions.has(session.sessionId)
+            ? "initializing" as const
+            : session.running ? "running" as const : "idle" as const,
+        })),
+    ),
   };
 }

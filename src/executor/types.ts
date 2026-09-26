@@ -193,6 +193,8 @@ export type CreateAcpxRuntimeContext = {
   agent: AcpAgentDefinition;
   connectionId?: string;
   permissionTimeoutMs: number;
+  onProcessStarted?: (pid: number) => void;
+  onProcessExit?: (pid: number) => void;
 };
 
 export type CreateAcpxRuntime = (
@@ -226,6 +228,7 @@ export type AgentRuntimeExecutor = {
   getAcpSessionStatus(sessionId: string): AcpSessionStatus;
   /** Read-only operational state; excludes conversation and tool content. */
   listAcpSessions?(): AcpSessionStatus[];
+  snapshotAcpResources?(): Promise<import("./worker-resources").WorkerResources>;
   promptAcpSession(
     sink: AgentHostSink,
     sessionId: string,

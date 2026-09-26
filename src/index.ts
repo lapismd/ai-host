@@ -36,6 +36,7 @@ export {
   type CreateAcpxRuntimeContext,
   type SpawnPayload,
 } from "./executor/executor";
+export type { WorkerResources } from "./executor/worker-resources";
 export {
   AGENT_RUNTIME_COMMANDS,
   AGENT_RUNTIME_PROTOCOL,

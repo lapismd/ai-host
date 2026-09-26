@@ -69,6 +69,10 @@ export async function defaultCreateAcpxRuntime(
       agentRegistry: registry,
       mcpServers: toAcpxMcpServers(payload.mcpServers),
       permissionMode: "deny-all",
+      processLifecycle: {
+        onSpawned: ({ pid }: { pid: number }) => context.onProcessStarted?.(pid),
+        onExit: ({ pid }: { pid: number }) => context.onProcessExit?.(pid),
+      },
       onPermissionRequest: (request: AcpxPermissionRequest, requestContext?: { signal?: AbortSignal }) =>
         requestAcpPermission(sink, sessionId, payload, pendingApprovals, context, request, requestContext?.signal),
     });

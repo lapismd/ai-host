@@ -117,6 +117,8 @@ export async function initializeAcpSession(
       agent,
       connectionId: sink.connectionId,
       permissionTimeoutMs: state.permissionTimeoutMs,
+      onProcessStarted: (pid) => state.workerProcesses.started(sessionId, pid),
+      onProcessExit: (pid) => state.workerProcesses.exited(sessionId, pid),
     },
   );
   const handle = await runtime.ensureSession({
