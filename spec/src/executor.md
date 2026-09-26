@@ -43,6 +43,11 @@ including named type, framing, HTTP, session, and shim-resolution modules.
 | AH-MCP-006 | The default stdio `lapis-tools` contribution MUST resolve its tracked MCP shim launcher relative to the AI Host package, never relative to the embedding process entrypoint or current working directory. Source-imported and built CLI hosts MUST therefore advertise the same package-owned launcher.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | AH-MCP-007 | An embedding executable MUST be able to supply the complete command and argument vector used to launch the stdio MCP shim. Credentials MUST remain in the child environment, and the default package-owned Node launcher MUST remain unchanged when no override is supplied. Native Codex launches MUST forward bridge environment variable names through MCP `env_vars` and mark the requested application bridge required, preventing turns from silently starting without their tools.                                                                                                                                                                                                                                                                                                                                                                                               |
 
+For AH-ACP-022, a retained persistent session keeps its acpx-owned process
+across sequential turns on the same session key. Closing that session releases
+the process; the host MUST NOT transfer its process, permission callback, MCP
+servers, or event ownership to a different session key.
+
 The executor exposes optional read-only session enumeration for the standalone operator CLI. It reuses live session status and does not expose content.
 
 Embedding controllers can resolve an agent launch command through the public library.
