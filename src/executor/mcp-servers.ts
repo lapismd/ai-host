@@ -49,7 +49,7 @@ export function restrictedAcpPayload(payload: AcpStartPayload): AcpStartPayload 
     ...(payload.model ? { model: payload.model } : {}),
     ...(payload.thinking ? { thinking: payload.thinking } : {}),
     ...(payload.metadata ? { metadata: payload.metadata } : {}),
-    restricted: true,
+    ...(payload.approvalPolicy ? { approvalPolicy: payload.approvalPolicy } : {}), restricted: true,
     mcpServers: [],
   };
 }

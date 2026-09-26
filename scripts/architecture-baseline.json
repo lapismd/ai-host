@@ -212,8 +212,8 @@
       "forbiddenImportCount": 0
     },
     "src/executor/session-startup-config.ts": {
-      "countedLines": 81,
-      "physicalLines": 85,
+      "countedLines": 60,
+      "physicalLines": 62,
       "forbiddenImportCount": 0
     },
     "src/executor/session.ts": {

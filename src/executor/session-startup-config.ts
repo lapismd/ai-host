@@ -3,6 +3,8 @@ import {
   toAcpxThinkingValue,
 } from "../acp/acp-session-options";
 import { thinkingConfigurationKey } from "./session";
+import { applyNativePermissionPolicy, type PermissionModeResult } from "./session-permission-policy";
+export type { PermissionModeResult } from "./session-permission-policy";
 import type {
   AcpRuntimeHandle,
   AcpStartPayload,
@@ -15,12 +17,6 @@ type StartupRuntime = Pick<
 > & {
   setMode?(input: { handle: AcpRuntimeHandle; mode: string }): Promise<void>;
 };
-
-export interface PermissionModeResult {
-  requested: string;
-  status: "applied" | "unsupported" | "rejected";
-  effective?: string;
-}
 
 export async function applyStartupConfiguration(input: {
   runtime: StartupRuntime;
@@ -62,24 +58,5 @@ export async function applyStartupConfiguration(input: {
       throw error;
     }
   }
-  if (payload.restricted && payload.permissionMode) return { requested: payload.permissionMode, status: "unsupported" };
-  return applyAdvertisedPermissionMode(runtime, handle, payload.permissionMode);
-}
-
-async function applyAdvertisedPermissionMode(
-  runtime: StartupRuntime,
-  handle: AcpRuntimeHandle,
-  mode: string | undefined,
-): Promise<PermissionModeResult | undefined> {
-  if (!mode) return;
-  const result = { requested: mode, status: "unsupported" as const };
-  if (!runtime.setMode || !runtime.getCapabilities) return result;
-  try {
-    const capabilities = await runtime.getCapabilities({ handle });
-    if (!(capabilities.configOptionKeys ?? []).includes("mode")) return result;
-    await runtime.setMode({ handle, mode });
-    return { requested: mode, status: "applied", effective: mode };
-  } catch {
-    return { requested: mode, status: "rejected" };
-  }
+  return applyNativePermissionPolicy({ runtime, handle, payload, agentId });
 }

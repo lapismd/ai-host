@@ -41,7 +41,7 @@ export type AcpStartPayload = {
   workspace?: string;
   agent?: string;
   model?: { provider?: string; model?: string };
-  thinking?: AcpThinkingValue; permissionMode?: string;
+  thinking?: AcpThinkingValue; permissionMode?: string; approvalPolicy?: "ask" | "allow-all";
   metadata?: Record<string, unknown>;
   mcpServers?: AcpMcpServer[];
   resumeSessionId?: string;
@@ -279,7 +279,7 @@ export type AcpSessionState = {
   agentId?: string;
   connectionId?: string;
   appToolBridgeId?: string;
-  restricted: boolean;
+  restricted: boolean; approvalPolicy?: "ask" | "allow-all";
   running: boolean;
 };
 

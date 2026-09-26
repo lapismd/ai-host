@@ -2,11 +2,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { VolatileSessionStore } from "./volatile-session-store";
-import {
-  createAcpAgentRegistry,
-  withAcpVcsEnvironment,
-} from "../acp/acp-agent";
-import { vcsEnvironment } from "../acp/acp-session-options";
+import { createAcpAgentRegistry } from "../acp/acp-agent";
+import { acpRuntimeRegistry } from "./acp-runtime-registry";
 import { toAcpxMcpServers } from "./mcp-servers";
 import { requestAcpPermission, type AcpxPermissionRequest } from "./permission-request";
 import type {
@@ -47,22 +44,11 @@ export async function defaultCreateAcpxRuntime(
   const sessionStore = new VolatileSessionStore();
   let runtime: AcpxRuntimeLike;
   try {
-    const identity = vcsEnvironment(payload);
-    const configured = acpx.createAgentRegistry(
-      context.agent.command
-        ? { overrides: { [context.agent.id]: context.agent.command } }
-        : undefined,
+    const registry = acpRuntimeRegistry(
+      acpx.createAgentRegistry,
+      context.agent,
+      payload,
     );
-    const registry = identity
-      ? acpx.createAgentRegistry({
-          overrides: {
-            [context.agent.id]: withAcpVcsEnvironment(
-              configured.resolve(context.agent.id),
-              identity,
-            ),
-          },
-        })
-      : configured;
     runtime = acpx.createAcpRuntime({
       cwd,
       sessionStore,

@@ -5,6 +5,7 @@ import { mergeCursorAvailableModels } from "../inventory/acp-model-inventory";
 import { rememberLastGoodCatalog } from "./catalog";
 import { restrictedAcpPayload, withAppToolMcpServer } from "./mcp-servers";
 import { settlePendingPermissions } from "./permissions";
+import { retainedSessionMatches } from "./session-compatibility";
 import {
   createAcpSessionState,
   emitRuntimeEvent,
@@ -61,12 +62,7 @@ export async function initializeAcpSession(
   const sequenceBase = resolveSequenceBase(payload);
   const existing = state.acpSessions.get(sessionId);
   if (existing) {
-    if (
-      existing.appToolBridgeId !== payload.appToolBridgeId ||
-      existing.restricted !== (payload.restricted === true) ||
-      (existing.appToolBridgeId !== undefined &&
-        existing.connectionId !== sink.connectionId)
-    ) {
+    if (!retainedSessionMatches(existing, payload, sink)) {
       settlePendingPermissions(state.pendingApprovals, sessionId, {
         outcome: "reject_once",
       });
@@ -144,6 +140,7 @@ export async function initializeAcpSession(
   session.connectionId = sink.connectionId;
   session.appToolBridgeId = effectivePayload.appToolBridgeId;
   session.restricted = effectivePayload.restricted === true;
+  session.approvalPolicy = effectivePayload.approvalPolicy;
   state.acpSessions.set(sessionId, session);
   return session;
 }

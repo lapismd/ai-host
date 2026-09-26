@@ -68,11 +68,11 @@ and the feature dependency matrix. New production and script files must stay at
 or under 300 counted lines; new tests at or under 500. Existing files must not
 grow counted lines without updating `scripts/architecture-baseline.json` in the
 same change. A recorded budget fails when the current counted size plus twenty
-is still below that budget. Session startup configuration, including an
-advertised harness permission mode, lives in `session-startup-config.ts`, and
-the `session-lifecycle.ts` budget records that extraction. `src/file-tools` must not import MCP, executor, or
-WebSocket transport. Organisation plans under `docs/plans/` are not canonical
-requirements.
+is still below that budget. Session startup delegates native permission policy,
+retained-session compatibility, launch environment and registry composition to
+named executor and ACP modules. `src/file-tools` must not import MCP, executor,
+or WebSocket transport. Organisation plans under `docs/plans/` are not
+canonical requirements.
 
 Session status exposes permission-mode application separately from a requested mode.
 The executor retains deadline checks at the execution boundary; the controller
