@@ -15,15 +15,15 @@ MUST update the mapped chapter in the same Jujutsu change.
 
 ## Change map
 
-| Protected area                                                                                                                                            | Required chapter     |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| `src/serve.ts`, `src/parse-cli.ts`, `src/cli.ts`, `src/token.ts`, `src/ws-server.ts`, `src/ws/`, `src/protocol.ts`, `src/protocol/`, `src/replay-buffer.ts`, `src/client.ts` | `protocol.md`        |
+| Protected area                                                                                                                                                                                                                                                                                               | Required chapter     |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------- |
+| `src/serve.ts`, `src/parse-cli.ts`, `src/cli.ts`, `src/token.ts`, `src/ws-server.ts`, `src/ws/`, `src/protocol.ts`, `src/protocol/`, `src/replay-buffer.ts`, `src/client.ts`                                                                                                                                 | `protocol.md`        |
 | `src/executor.ts`, `src/executor/`, `src/acp-agent.ts`, `src/acp/`, `src/acp-session-options.ts`, `src/acp-model-catalog.ts`, `src/acp-model-inventory.ts`, `src/inventory/`, `src/cursor-model-inventory.ts`, `src/codex-model-inventory.ts`, `src/opencode-model-inventory.ts`, `src/inventory-process.ts` | `executor.md`        |
-| `src/mcp-shim.ts`, `src/mcp-shim-cli.ts`, `src/tool-bridge.ts`, `src/mcp/`                                                                               | `executor.md`        |
-| `src/file-tools/`                                                                                                                                         | `file-tools.md`      |
-| `src/cli/**`, `src/cli.ts`, `src/main.ts`, `deno.json`, `deno.lock`, `docs/cli/**`, `scripts/build-cli.ts`, `scripts/docs-cli.ts`, `scripts/smoke-cli.ts` | `cli.md`             |
-| `package.json`, `src/index.ts`, `bin/`, `scripts/`, `docs/plans/`, `.changeset/`, `.github/workflows/`, `CHANGELOG.md`, `LICENSE.md`, `README.md`          | `architecture.md`    |
-| `spec-validator.config.mjs`, `AGENTS.md`, `pnpm-workspace.yaml`, `spec/book.toml`, `.gitignore`                                                           | `spec-governance.md` |
+| `src/mcp-shim.ts`, `src/mcp-shim-cli.ts`, `src/tool-bridge.ts`, `src/mcp/`                                                                                                                                                                                                                                   | `executor.md`        |
+| `src/file-tools/`                                                                                                                                                                                                                                                                                            | `file-tools.md`      |
+| `src/cli/**`, `src/cli.ts`, `src/main.ts`, `deno.json`, `deno.lock`, `docs/cli/**`, `scripts/build-cli.ts`, `scripts/docs-cli.ts`, `scripts/smoke-cli.ts`                                                                                                                                                    | `cli.md`             |
+| `package.json`, `src/index.ts`, `bin/`, `scripts/`, `docs/plans/`, `.changeset/`, `.github/workflows/`, `CHANGELOG.md`, `LICENSE.md`, `README.md`                                                                                                                                                            | `architecture.md`    |
+| `spec-validator.config.mjs`, `AGENTS.md`, `pnpm-workspace.yaml`, `spec/book.toml`, `.gitignore`                                                                                                                                                                                                              | `spec-governance.md` |
 
 The repository-owned validator configuration and pnpm workspace file remain
 governance inputs, but `@lapismd/spec-validator` itself is consumed as the
@@ -49,3 +49,9 @@ so accidental reintroduction still requires canonical review.
 
 The executor mapping includes `src/executor/volatile-session-store.ts`; its bounded
 execution state is governed by the executor chapter and verified independently.
+
+The 0.3.0 release resolves patched transitive URI, IP address, source-map, and
+proxy address libraries through recorded workspace overrides. The Changesets
+braces and sprintf-js advisories remain unpatched and block the audit gate
+unless the exact exceptions accepted for 0.3.0 are recorded or upstream fixes
+are available. See the dated release audit record for scope and removal rules.

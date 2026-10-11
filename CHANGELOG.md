@@ -1,5 +1,11 @@
 # @lapismd/ai-host
 
+## 0.3.0
+
+### Minor Changes
+
+- Add scoped volatile ACP worker lifetime, native permission settlement and resource reporting, and model discovery for OpenCode, Cursor, and Codex without running request-path probe sessions. Preserve explicit VCS identity and the private MCP bridge.
+
 ## 0.2.0
 
 ### Minor Changes

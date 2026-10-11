@@ -90,3 +90,8 @@ The executor records process roots through acpx lifecycle callbacks. A read-only
 snapshot counts each owned root and descendant once, without starting ACP or
 reading session contents. Callers receive an explicit partial or unavailable
 status when RSS cannot be measured.
+
+The 0.3.0 release preserves the published 0.2.0 changelog and remote release
+history, consumes fresh minor release intent for owned ACP lifecycle and native
+policy APIs, and resolves the patched MCP SDK from the registry. The original
+consumed Changesets are not restored.
