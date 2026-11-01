@@ -51,10 +51,10 @@
     "release:publish": "node ./scripts/ai-host-release.mjs publish",
     "release:verify": "node ./scripts/ai-host-release.mjs verify",
     "release:version": "changeset version && pnpm install --lockfile-only && prettier package.json CHANGELOG.md --write",
-    "spec:build": "spec-validator build",
-    "spec:check": "spec-validator check",
-    "spec:first": "spec-validator first",
-    "spec:validate": "spec-validator validate"
+    "spec:build": "node scripts/dependency-automation/spec-policy.mjs build",
+    "spec:check": "node scripts/dependency-automation/spec-policy.mjs check",
+    "spec:first": "node scripts/dependency-automation/spec-policy.mjs first",
+    "spec:validate": "node scripts/dependency-automation/spec-policy.mjs validate"
   },
   "exports": {
     ".": {
@@ -82,7 +82,7 @@
   "devDependencies": {
     "@changesets/changelog-github": "^0.7.0",
     "@changesets/cli": "^2.31.1",
-    "@lapismd/spec-validator": "0.1.0",
+    "@lapismd/spec-validator": "0.2.0",
     "@types/node": "^22.10.5",
     "@types/ws": "^8.18.1",
     "esbuild": "^0.28.2",

@@ -40,6 +40,11 @@ their source repositories. The same guidance requires `pnpm audit` on every
 check. `pnpm-workspace.yaml` MAY record overrides for patched transitive
 advisories that the audit gate requires.
 
+The dependency-automation candidate refreshes patched transitive resolutions
+through those workspace overrides and uses the Deno-free spec-validator 0.2
+CLI. The full audit, mapped spec-first checks, and functional lanes remain
+required; this refresh adds no advisory exception or publication permission.
+
 Standalone executable and operator CLI behavior is specified in [Standalone operator CLI](./cli.md). The CLI suppresses automatic token output; embedded library behavior remains compatible.
 
 Operator implementation and executable release workflows now belong to the
