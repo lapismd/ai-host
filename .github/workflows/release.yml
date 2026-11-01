@@ -147,8 +147,7 @@ jobs:
     name: Publish with npm trusted publishing
     needs: artifact
     if: >-
-      needs.artifact.outputs.should_publish == 'true' &&
-      needs.artifact.outputs.bootstrap_required == 'false'
+      needs.artifact.outputs.should_publish == 'true' && needs.artifact.outputs.bootstrap_required == 'false'
     runs-on: ubuntu-latest
     environment:
       name: npm-production
@@ -190,9 +189,7 @@ jobs:
       - artifact
       - publish-production
     if: >-
-      always() &&
-      needs.artifact.outputs.should_publish == 'true' &&
-      needs.publish-production.result == 'success'
+      always() && needs.artifact.outputs.should_publish == 'true' && needs.publish-production.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -222,9 +219,7 @@ jobs:
 
       - name: Verify clean install, integrity, and provenance
         run: >-
-          pnpm release:verify
-          .release/release-manifest.json
-          .release/npm-signatures.json
+          pnpm release:verify .release/release-manifest.json .release/npm-signatures.json
 
       - name: Retain npm signature evidence
         if: always()
@@ -270,3 +265,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm release:notes .release/release-manifest.json
+  notify-dependencies:
+    name: Notify dependency consumers
+    needs:
+      - verify
+    if: always() && needs.verify.result == 'success'
+    permissions:
+      contents: read
+    uses: lapismd/dependency-automation/.github/workflows/notify.yml@ea9d35b12b612467bbabf1c6271ffa41b5eda4ba
+    with:
+      automation-ref: ea9d35b12b612467bbabf1c6271ffa41b5eda4ba
+      source-sha: ${{ github.sha }}
+    secrets:
+      app-private-key: ${{ secrets.LAPIS_DEPENDENCY_APP_PRIVATE_KEY }}

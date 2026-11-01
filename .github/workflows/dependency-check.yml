@@ -1,0 +1,41 @@
+name: Check dependency candidates
+on:
+  pull_request: null
+  workflow_dispatch: null
+permissions:
+  contents: read
+env:
+  LAPIS_CI_EVENT: ${{ github.event_name }}
+  LAPIS_CI_PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+  LAPIS_CI_PR_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+  LAPIS_CI_PR_HEAD: ${{ github.event.pull_request.head.ref }}
+  LAPIS_DEPENDENCY_BOT_LOGIN: ${{ vars.LAPIS_DEPENDENCY_BOT_LOGIN }}
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.15.0
+      - run: corepack enable && corepack prepare pnpm@10.32.1 --activate
+      - uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68
+        with:
+          tool: mdbook@0.5.4
+      - name: Install exact candidate dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Audit dependencies
+        run: pnpm audit
+      - name: Enforce specification-first changes
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: pnpm spec:first --base "$PR_BASE" --head "$PR_HEAD"
+      - name: pnpm checks:release
+        run: pnpm checks:release
+      - name: pnpm packages:pack
+        run: pnpm packages:pack
