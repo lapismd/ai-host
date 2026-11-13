@@ -45,6 +45,11 @@ through those workspace overrides and uses the Deno-free spec-validator 0.2
 CLI. The full audit, mapped spec-first checks, and functional lanes remain
 required; this refresh adds no advisory exception or publication permission.
 
+The November 2026 audit refresh raises the `@hono/node-server` override to
+2.1.6 for `GHSA-qv5m-9pm6-hqp3` and `GHSA-jpvv-r467-5p4w`. The advisories are
+fixed in the resolved production graph and are not added to the audit ignore
+inventory.
+
 Standalone executable and operator CLI behavior is specified in [Standalone operator CLI](./cli.md). The CLI suppresses automatic token output; embedded library behavior remains compatible.
 
 Operator implementation and executable release workflows now belong to the
