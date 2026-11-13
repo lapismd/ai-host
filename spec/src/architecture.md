@@ -1,6 +1,6 @@
 # Architecture
 
-CI audit recovery pins the patched transitive development/runtime packages required to clear the retained audit gate. Package-owned functional checks and publication gates remain required; no audit advisory is suppressed.
+CI audit recovery pins the patched transitive development/runtime packages required to clear the retained audit gate. The `@hono/node-server` override selects 2.1.6 or later to reject malformed reverse-proxy paths and retain socket error handling during asynchronous WebSocket upgrades. Package-owned functional checks and publication gates remain required; no audit advisory is suppressed.
 
 <!-- dependency-automation-policy -->
 
@@ -73,7 +73,7 @@ minor release so npm no longer advertises the retired `lapis-ai-host` command.
 
 Root validation runs `pnpm audit` before typechecking so a lockfile or override
 change cannot land with a known-vulnerable graph. Workspace overrides pin
-transitive patches such as Vitest 4.1.11.
+transitive patches such as Vitest 4.1.11 and `@hono/node-server` 2.1.6.
 
 For AH-ARCH-001, `scripts/check-architecture.mjs` enforces counted-line budgets
 and the feature dependency matrix. New production and script files must stay at
