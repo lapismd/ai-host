@@ -50,6 +50,11 @@ The November 2026 audit refresh raises the `@hono/node-server` override to
 fixed in the resolved production graph and are not added to the audit ignore
 inventory.
 
+The subsequent 2026-11-13 refresh raises the Hono override to 4.13.16 after
+three new advisories made 4.13.11 fail the production audit. The declared MCP
+SDK range and public package manifest remain unchanged; the committed lock and
+source validation select the patched transitive version without an exception.
+
 Standalone executable and operator CLI behavior is specified in [Standalone operator CLI](./cli.md). The CLI suppresses automatic token output; embedded library behavior remains compatible.
 
 Operator implementation and executable release workflows now belong to the

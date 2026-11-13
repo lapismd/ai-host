@@ -12,7 +12,7 @@ overrides:
   vite@>=8.0.0 <8.3.3: 8.3.3
   vitest@>=4.0.0 <4.1.12: 4.1.12
   "@vitest/mocker@>=4.0.0 <4.1.12": 4.1.12
-  hono@>=4.0.0 <4.13.11: 4.13.11
+  hono@>=4.0.0 <4.13.16: 4.13.16
   ip-address@>=10.0.0 <10.7.4: 10.7.4
   zod@>=4.0.0 <4.6.6: 4.6.6
   body-parser@>=2.0.0 <2.4.0: 2.4.0
@@ -461,7 +461,7 @@ packages:
       }
     engines: { node: ">=20" }
     peerDependencies:
-      hono: 4.13.11
+      hono: 4.13.16
 
   "@inquirer/external-editor@1.0.3":
     resolution:
@@ -1489,10 +1489,10 @@ packages:
       }
     engines: { node: ">= 0.4" }
 
-  hono@4.13.11:
+  hono@4.13.16:
     resolution:
       {
-        integrity: sha512-/SMX/RQNJn7oNmFwH6DtwDqcrzZU2otm1FD6OJe2cWF6cfy/F8hq0XVBv7xW3FTJshRQwuBnXHDq2kNsdZnshg==,
+        integrity: sha512-AOLOEhvrV+iH92xXCnFr/5+3KjPKcI3xP63XJtX5spAnkznPdHijlIsUTpi7/9EhWqrTCekw5c5zh1K+YsVw7A==,
       }
     engines: { node: ">=16.9.0" }
 
@@ -2914,9 +2914,9 @@ snapshots:
   "@esbuild/win32-x64@0.28.2":
     optional: true
 
-  "@hono/node-server@2.1.6(hono@4.13.11)":
+  "@hono/node-server@2.1.6(hono@4.13.16)":
     dependencies:
-      hono: 4.13.11
+      hono: 4.13.16
 
   "@inquirer/external-editor@1.0.3(@types/node@22.20.1)":
     dependencies:
@@ -2950,7 +2950,7 @@ snapshots:
 
   "@modelcontextprotocol/sdk@1.32.1(zod@4.6.6)":
     dependencies:
-      "@hono/node-server": 2.1.6(hono@4.13.11)
+      "@hono/node-server": 2.1.6(hono@4.13.16)
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)
       content-type: 1.0.5
@@ -2960,7 +2960,7 @@ snapshots:
       eventsource-parser: 3.1.1
       express: 5.2.1
       express-rate-limit: 8.7.0(express@5.2.1)
-      hono: 4.13.11
+      hono: 4.13.16
       jose: 6.2.12
       json-schema-typed: 8.0.2
       pkce-challenge: 5.0.1
@@ -3522,7 +3522,7 @@ snapshots:
     dependencies:
       function-bind: 1.1.2
 
-  hono@4.13.11: {}
+  hono@4.13.16: {}
 
   http-errors@2.0.1:
     dependencies:
