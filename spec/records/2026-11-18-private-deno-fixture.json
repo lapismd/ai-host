@@ -1,0 +1,79 @@
+{
+  "schema": 1,
+  "base": "5a323bc5435eb82f682ff89d285fb0258b3470a4",
+  "qualifiedSnapshot": "fd5ae8f59d510d777ae49b71edd7862a204f0b6c",
+  "withdrawalRequalificationSnapshot": "d554aac346ee5978eb147ef04e8ae27d3e3686a8",
+  "status": "qualified",
+  "removed": "tests/fixtures/acp-agent.ts",
+  "toolUpdate": {
+    "name": "@lapismd/spec-validator",
+    "from": "0.2.0",
+    "to": "0.2.1"
+  },
+  "pnpm": "10.32.1",
+  "node": "24.15.0",
+  "image": "sha256:a4ffd16112f050b63d0e53c22ce7f6e8790872c0cdcfb2d8c85d5a6df0bc8345",
+  "focusedPassed": 14,
+  "fullPassed": 156,
+  "testFiles": 29,
+  "specLanesPassed": 5,
+  "actualCheckExitCode": 0,
+  "fullAudit": {
+    "initial": {
+      "unchangedMainExitCode": 1,
+      "candidateExitCode": 1,
+      "advisory": "GHSA-fc5q-39xc-vjpf",
+      "cve": "CVE-2026-112366",
+      "severity": "high",
+      "findings": [
+        {
+          "version": "2.3.2",
+          "path": ".>@changesets/cli>@changesets/config>micromatch>picomatch"
+        },
+        {
+          "version": "4.0.7",
+          "path": ".>vitest>picomatch"
+        }
+      ],
+      "patchedVersions": "<0.0.0",
+      "productionFindings": 0
+    },
+    "withdrawnAt": "2026-11-18T15:38:56Z",
+    "recheckedAt": "2026-11-19",
+    "unchangedMainExitCode": 0,
+    "unchangedMainProductionExitCode": 0,
+    "candidateExitCode": 0,
+    "candidateProductionExitCode": 0,
+    "candidateFindings": 0,
+    "productionFindings": 0,
+    "newExceptionApplied": false
+  },
+  "packages": {
+    "baseline": {
+      "archive": "lapismd-ai-host-0.3.0.tgz",
+      "sha256": "4cc91a18d78f3689cd841b1aa94308ca0177f93e6b08df3cfa10fcfc2cb5948f"
+    },
+    "candidate": {
+      "archive": "lapismd-ai-host-0.3.0.tgz",
+      "sha256": "a173b95d23057f085a705281448c481c60aa21c6331a74744b78ebe903d755f9"
+    },
+    "files": 144,
+    "distFilesIdentical": 129,
+    "changedFiles": [
+      "package/package.json",
+      "package/spec/src/architecture.md",
+      "package/spec/src/verification.md"
+    ],
+    "fixtureAbsentFromOriginalPackage": true,
+    "fixtureAbsentFromCandidatePackage": true
+  },
+  "packedPublicConsumer": "pass; root/client/file-tools + controller registry/executor + file-tool write/read/edit",
+  "nativeControllerExecuted": false,
+  "remaining": [
+    "Push and hosted qualification remain separate",
+    "Any publication remains separately gated"
+  ],
+  "baselineFocusedPassed": 14,
+  "ownerPackagesPack": "pass; no unpublished version; actual independent packs compared",
+  "finalCanonicalGate": "pass; five lanes,156tests"
+}

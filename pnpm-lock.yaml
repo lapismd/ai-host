@@ -42,8 +42,8 @@ importers:
         specifier: ^2.31.1
         version: 2.31.1(@types/node@22.20.1)
       "@lapismd/spec-validator":
-        specifier: 0.2.0
-        version: 0.2.0
+        specifier: 0.2.1
+        version: 0.2.1
       "@types/node":
         specifier: ^22.10.5
         version: 22.20.1
@@ -481,10 +481,10 @@ packages:
         integrity: sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==,
       }
 
-  "@lapismd/spec-validator@0.2.0":
+  "@lapismd/spec-validator@0.2.1":
     resolution:
       {
-        integrity: sha512-fUMh7fpoZXuMRAc5Jdo+Y2sUhAPeO5o5R5AIdwKEs/xNLS2W3mSSHimscxI58JuUEFPPk/SI+jE0Vcvv7gXdlw==,
+        integrity: sha512-aHLByppZkay1axSm8KvCwOJz0si8aDyZBXDGWW+d2VQw+66f1KLimw2rEMjYIpLdoSG9+yN5Kd1MKlAJw7xUVw==,
       }
     engines: { node: ">=22" }
     hasBin: true
@@ -2927,7 +2927,7 @@ snapshots:
 
   "@jridgewell/sourcemap-codec@1.5.5": {}
 
-  "@lapismd/spec-validator@0.2.0":
+  "@lapismd/spec-validator@0.2.1":
     dependencies:
       jiti: 2.7.0
       typescript: 5.9.3
