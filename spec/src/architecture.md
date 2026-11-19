@@ -42,6 +42,13 @@ MUST consume the published `@lapismd/spec-validator` package from npm.
 Checkout-specific dependency resolution for the validator is not part of the
 package architecture or consumer contract.
 
+The private Deno ACP fixture from the retired operator smoke lane is outside
+the current TypeScript, Vitest, bundle and published-package inputs. Its removal
+retains the current Node ACP fixture coverage and all public transport and
+file-tools exports. Root-only specification tooling selects Deno-free validator
+0.2.1; Deno compatibility metadata, local configuration, controller execution
+contracts and historical acceptance evidence remain unchanged.
+
 Release automation is package-owned and repository-local. The first
 `@lapismd/ai-host` npm version is a manual bootstrap publish from a verified
 tarball. Future versions use Changesets version pull requests, an immutable
